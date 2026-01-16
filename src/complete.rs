@@ -102,7 +102,7 @@ fn complete_leaf(cmd_name: &str, remaining: &[String]) -> Vec<Completion> {
 
     match cmd_name {
         // Commands that take a silo name as first arg
-        "new" | "rm" | "cd" | "exec" | "rebase" | "merge" | "claude" => {
+        "new" | "rm" | "cd" | "exec" | "run" | "rebase" | "merge" | "claude" => {
             if completing_first_arg {
                 silo_names()
             } else {
@@ -212,6 +212,15 @@ mod tests {
         // subcommands like it would for a broken implementation
         let v = values(&completions);
         assert!(!v.contains(&"exec"));
+        assert!(!v.contains(&"new"));
+    }
+
+    #[test]
+    fn run_with_empty_arg_returns_silos() {
+        // "run" is an alias for "exec" and should also complete silo names
+        let completions = generate(&["run".into(), "".into()]);
+        let v = values(&completions);
+        assert!(!v.contains(&"run"));
         assert!(!v.contains(&"new"));
     }
 
