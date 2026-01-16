@@ -23,7 +23,11 @@ silo() {{
     while IFS='=' read -r key value; do
         case "$key" in
             cd) builtin cd "$value" ;;
-            last) export SILO_LAST="$value" ;;
+            last)
+                # Save current silo as "last" (for cd -), then update current
+                export SILO_LAST="$SILO_CURRENT"
+                export SILO_CURRENT="$value"
+                ;;
         esac
     done < "$SILO_DIRECTIVE_FILE"
 

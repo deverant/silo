@@ -15,7 +15,7 @@ pub enum ShellType {
 /// Environment variable for the directive file path
 pub const DIRECTIVE_FILE_ENV: &str = "SILO_DIRECTIVE_FILE";
 
-/// Environment variable for the last used silo
+/// Environment variable for the last used silo (previous location for `cd -`)
 pub const LAST_ENV: &str = "SILO_LAST";
 
 /// Write a directive to the specified path (if provided).
