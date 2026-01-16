@@ -370,7 +370,7 @@ fn run_all(use_color: bool, quiet: bool) -> Result<(), String> {
             // Print main worktree
             let marker = if is_current_main { "*" } else { " " };
             println!(
-                "{} {:<nw$}  {:<bw$}  (main) {}",
+                "{} {:<nw$}  {:<bw$}  {}",
                 marker,
                 main_display_name,
                 main_branch,
@@ -423,7 +423,7 @@ fn run_all(use_color: bool, quiet: bool) -> Result<(), String> {
             // Non-TTY: simple format without headers
             let marker = if is_current_main { "*" } else { " " };
             println!(
-                "{} {} ({})  (main) {}",
+                "{} {} ({})  {}",
                 marker,
                 main_display_name,
                 main_branch,
