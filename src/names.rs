@@ -73,13 +73,18 @@ fn path_components(path: &Path) -> Vec<String> {
 /// 1. Start with just the silo name (directory name)
 /// 2. If there are duplicates, add repo name: repo/name
 /// 3. If still duplicates, add parent directories until unique
-pub fn generate_display_names(silos: &[Silo]) -> Vec<String> {
+///
+/// If `require_repo_prefix` is true, always include at least the repo name
+/// (useful when displaying silos outside of any repo context).
+pub fn generate_display_names(silos: &[Silo], require_repo_prefix: bool) -> Vec<String> {
     if silos.is_empty() {
         return Vec::new();
     }
 
     // Track how many path components each silo needs (0 = just name, 1 = repo/name, etc.)
-    let mut depth: Vec<usize> = vec![0; silos.len()];
+    // Start at depth 1 if repo prefix is required
+    let initial_depth = if require_repo_prefix { 1 } else { 0 };
+    let mut depth: Vec<usize> = vec![initial_depth; silos.len()];
 
     // Pre-compute path components for each silo's repo
     let repo_components: Vec<Vec<String>> = silos
@@ -185,8 +190,8 @@ pub fn resolve_name<'a>(
         }
     }
 
-    // Generate display names for all silos
-    let display_names = generate_display_names(silos);
+    // Generate display names for all silos (minimal names for resolution)
+    let display_names = generate_display_names(silos, false);
 
     // Find silos whose display name matches the input (or ends with the input)
     let matches: Vec<&Silo> = silos
@@ -283,7 +288,7 @@ mod tests {
             make_silo("/projects/repoA", "repoA", "feature1"),
             make_silo("/projects/repoA", "repoA", "feature2"),
         ];
-        let names = generate_display_names(&silos);
+        let names = generate_display_names(&silos, false);
         assert_eq!(names, vec!["feature1", "feature2"]);
     }
 
@@ -293,7 +298,7 @@ mod tests {
             make_silo("/projects/repoA", "repoA", "feature"),
             make_silo("/projects/repoB", "repoB", "feature"),
         ];
-        let names = generate_display_names(&silos);
+        let names = generate_display_names(&silos, false);
         assert_eq!(names, vec!["repoA/feature", "repoB/feature"]);
     }
 
@@ -303,7 +308,7 @@ mod tests {
             make_silo("/org1/repo", "repo", "feature"),
             make_silo("/org2/repo", "repo", "feature"),
         ];
-        let names = generate_display_names(&silos);
+        let names = generate_display_names(&silos, false);
         assert_eq!(names, vec!["org1/repo/feature", "org2/repo/feature"]);
     }
 
@@ -314,9 +319,46 @@ mod tests {
             make_silo("/projects/repoA", "repoA", "feature"),
             make_silo("/projects/repoB", "repoB", "feature"),
         ];
-        let names = generate_display_names(&silos);
+        let names = generate_display_names(&silos, false);
         // "main" is unique, both "feature" need repo prefix
         assert_eq!(names, vec!["main", "repoA/feature", "repoB/feature"]);
+    }
+
+    #[test]
+    fn test_display_names_require_repo_prefix() {
+        // When require_repo_prefix is true, always include repo name
+        let silos = vec![
+            make_silo("/projects/repoA", "repoA", "feature1"),
+            make_silo("/projects/repoA", "repoA", "feature2"),
+        ];
+        let names = generate_display_names(&silos, true);
+        assert_eq!(names, vec!["repoA/feature1", "repoA/feature2"]);
+    }
+
+    #[test]
+    fn test_display_names_require_repo_prefix_with_duplicates() {
+        // When require_repo_prefix is true and repo names conflict, add parent dir
+        let silos = vec![
+            make_silo("/org1/repo", "repo", "feature"),
+            make_silo("/org2/repo", "repo", "feature"),
+        ];
+        let names = generate_display_names(&silos, true);
+        assert_eq!(names, vec!["org1/repo/feature", "org2/repo/feature"]);
+    }
+
+    #[test]
+    fn test_display_names_require_repo_prefix_mixed() {
+        // Mixed: some unique at repo level, some need parent
+        let silos = vec![
+            make_silo("/projects/repoA", "repoA", "main"),
+            make_silo("/org1/repo", "repo", "feature"),
+            make_silo("/org2/repo", "repo", "feature"),
+        ];
+        let names = generate_display_names(&silos, true);
+        assert_eq!(
+            names,
+            vec!["repoA/main", "org1/repo/feature", "org2/repo/feature"]
+        );
     }
 
     #[test]

@@ -85,8 +85,8 @@ pub fn resolve_silo(name: &str) -> Result<crate::silo::Silo, String> {
         crate::names::ResolveResult::Found(silo) => Ok(silo.clone()),
         crate::names::ResolveResult::NotFound => Err(format!("Silo not found: {}", name)),
         crate::names::ResolveResult::Ambiguous(matches) => {
-            // Generate display names only for ambiguous error message
-            let display_names = crate::names::generate_display_names(&silos);
+            // Generate display names with repo prefix for clarity
+            let display_names = crate::names::generate_display_names(&silos, true);
             let ambiguous: Vec<String> = matches
                 .iter()
                 .filter_map(|m| {

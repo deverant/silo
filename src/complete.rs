@@ -137,9 +137,9 @@ fn silo_names() -> Vec<Completion> {
         }
     }
 
-    // Not in a repo: list all silos with display names
+    // Not in a repo: list all silos with display names (always include repo prefix)
     if let Ok(silos) = silo::collect_all_silos() {
-        let display_names = names::generate_display_names(&silos);
+        let display_names = names::generate_display_names(&silos, true);
         let mut names: Vec<_> = display_names.into_iter().map(Completion::new).collect();
         names.sort_by(|a, b| a.value.cmp(&b.value));
         return names;
