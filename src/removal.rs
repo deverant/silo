@@ -16,6 +16,8 @@ pub enum RemovalBlocker {
     UncommittedChanges(git::UncommittedStats),
     /// Silo has active processes running
     ActiveProcesses(Vec<process::ProcessInfo>),
+    /// Silo has commits not merged into main branch
+    UnmergedCommits(u32),
 }
 
 impl fmt::Display for RemovalBlocker {
@@ -43,6 +45,13 @@ impl fmt::Display for RemovalBlocker {
                         details.join(", ")
                     )
                 }
+            }
+            RemovalBlocker::UnmergedCommits(count) => {
+                write!(
+                    f,
+                    "Unmerged commits: {} commit(s) not in main branch",
+                    count
+                )
             }
         }
     }
@@ -99,13 +108,19 @@ impl TryFrom<Silo> for RemovableSilo {
             blockers.push(RemovalBlocker::ActiveProcesses(processes));
         }
 
+        // Check for unmerged commits (commits ahead of main)
+        let main_branch = Self::get_main_branch(&silo);
+        let branch_name = silo.branch_name();
+        let (ahead, _behind) = git::get_ahead_behind(&silo.storage_path, branch_name, &main_branch);
+        if ahead > 0 {
+            blockers.push(RemovalBlocker::UnmergedCommits(ahead));
+        }
+
         if !blockers.is_empty() {
             return Err(RemovalError { silo, blockers });
         }
 
         // Pre-compute removal state
-        let main_branch = Self::get_main_branch(&silo);
-        let branch_name = silo.branch_name();
         let would_delete_branch =
             git::is_branch_merged(&silo.main_worktree, branch_name, &main_branch);
 
@@ -253,6 +268,15 @@ mod tests {
         assert!(display.contains("staged"));
         assert!(display.contains("modified"));
         assert!(display.contains("untracked"));
+    }
+
+    #[test]
+    fn test_unmerged_commits_blocker_display() {
+        let blocker = RemovalBlocker::UnmergedCommits(3);
+        let display = format!("{}", blocker);
+        assert!(display.contains("Unmerged commits"));
+        assert!(display.contains("3 commit(s)"));
+        assert!(display.contains("not in main branch"));
     }
 
     #[test]
