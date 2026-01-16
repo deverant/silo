@@ -370,10 +370,12 @@ fn run_all(use_color: bool, quiet: bool) -> Result<(), String> {
             // Print main worktree
             let marker = if is_current_main { "*" } else { " " };
             println!(
-                "{} {:<nw$}  {:<bw$}  {}",
+                "{} {:<nw$}  {:<bw$}  {:>12}  {:>14}  {}",
                 marker,
                 main_display_name,
                 main_branch,
+                "",
+                "",
                 main_worktree.display(),
                 nw = global_name_width,
                 bw = global_branch_width
