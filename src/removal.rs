@@ -145,6 +145,11 @@ impl RemovableSilo {
         &self.silo.name
     }
 
+    /// Get a reference to the underlying silo.
+    pub fn silo(&self) -> &Silo {
+        &self.silo
+    }
+
     /// Print what would happen in a dry run.
     pub fn print_dry_run(&self) {
         println!("Would remove silo: {}", self.silo.name);

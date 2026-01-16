@@ -1,6 +1,7 @@
 //! The `prune` command: remove silos with no uncommitted changes.
 
 use crate::git;
+use crate::names;
 use crate::prompt;
 use crate::removal;
 use crate::silo;
@@ -46,12 +47,35 @@ pub fn run(all: bool, dry_run: bool, force: bool, quiet: bool) -> Result<(), Str
         (removable, blocked)
     };
 
+    // Generate display names - use repo prefix when pruning across all repos
+    let all_silos: Vec<_> = removable
+        .iter()
+        .map(|r| r.silo().clone())
+        .chain(blocked.iter().map(|e| e.silo.clone()))
+        .collect();
+    let display_names = names::generate_display_names(&all_silos, all);
+    let display_name_map: std::collections::HashMap<_, _> = all_silos
+        .iter()
+        .zip(display_names.iter())
+        .map(|(silo, name)| (silo.storage_path.clone(), name.clone()))
+        .collect();
+
+    // Helper to get display name for a silo
+    let get_display_name = |silo: &silo::Silo| -> String {
+        display_name_map
+            .get(&silo.storage_path)
+            .cloned()
+            .unwrap_or_else(|| silo.name.clone())
+    };
+
     if dry_run {
         for error in &blocked {
-            println!("Would skip: {} (blocked)", error.silo.name);
+            println!("Would skip: {} (blocked)", get_display_name(&error.silo));
         }
         for r in &removable {
-            r.print_dry_run();
+            let display_name = get_display_name(r.silo());
+            println!("Would remove silo: {}", display_name);
+            println!("  Path: {}", r.silo().storage_path.display());
         }
         println!("\n{} silo(s) would be pruned.", removable.len());
         if !blocked.is_empty() {
@@ -64,7 +88,7 @@ pub fn run(all: bool, dry_run: bool, force: bool, quiet: bool) -> Result<(), Str
     if !blocked.is_empty() && !quiet {
         eprintln!("Skipping {} silo(s) with blockers:", blocked.len());
         for error in &blocked {
-            eprintln!("  {}", error.silo.name);
+            eprintln!("  {}", get_display_name(&error.silo));
         }
     }
 
@@ -79,7 +103,7 @@ pub fn run(all: bool, dry_run: bool, force: bool, quiet: bool) -> Result<(), Str
     if !force {
         println!("Will prune {} silo(s):", removable.len());
         for r in &removable {
-            println!("  {}", r.name());
+            println!("  {}", get_display_name(r.silo()));
         }
         if !prompt::confirm("Continue?") {
             println!("Aborted.");
@@ -89,14 +113,14 @@ pub fn run(all: bool, dry_run: bool, force: bool, quiet: bool) -> Result<(), Str
 
     // Execute removals
     for r in removable {
-        let name = r.name().to_string();
+        let display_name = get_display_name(r.silo());
         if force {
             r.remove_force(quiet)?;
         } else {
             r.remove(quiet)?;
         }
         if !quiet {
-            println!("Pruned: {}", name);
+            println!("Pruned: {}", display_name);
         }
     }
 
