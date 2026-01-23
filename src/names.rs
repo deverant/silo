@@ -424,4 +424,70 @@ mod tests {
             matches!(result, ResolveResult::Found(s) if s.main_worktree == PathBuf::from("/org2/repo"))
         );
     }
+
+    #[test]
+    fn test_display_names_deep_path_difference() {
+        // Paths differ at org level, 3 components up from repo
+        let silos = vec![
+            make_silo("/workspace/org1/system/repo", "repo", "feature"),
+            make_silo("/workspace/org2/system/repo", "repo", "feature"),
+        ];
+        let names = generate_display_names(&silos, false);
+        // Should use org1/system/repo and org2/system/repo to distinguish
+        assert_eq!(
+            names,
+            vec!["org1/system/repo/feature", "org2/system/repo/feature"]
+        );
+    }
+
+    #[test]
+    fn test_display_names_very_deep_path_difference() {
+        // Paths differ 5 levels up - verifies no arbitrary max on components
+        let silos = vec![
+            make_silo("/root/a/b/c/d/e/repo", "repo", "silo"),
+            make_silo("/root/x/b/c/d/e/repo", "repo", "silo"),
+        ];
+        let names = generate_display_names(&silos, false);
+        // Should include all components needed: a/b/c/d/e/repo vs x/b/c/d/e/repo
+        assert_eq!(names, vec!["a/b/c/d/e/repo/silo", "x/b/c/d/e/repo/silo"]);
+    }
+
+    #[test]
+    fn test_display_names_difference_at_root() {
+        // Paths differ only at the very first component
+        let silos = vec![
+            make_silo("/alpha/shared/path/to/repo", "repo", "feature"),
+            make_silo("/beta/shared/path/to/repo", "repo", "feature"),
+        ];
+        let names = generate_display_names(&silos, false);
+        assert_eq!(
+            names,
+            vec![
+                "alpha/shared/path/to/repo/feature",
+                "beta/shared/path/to/repo/feature"
+            ]
+        );
+    }
+
+    #[test]
+    fn test_display_names_partial_path_overlap() {
+        // Three silos: two share more path components than the third
+        let silos = vec![
+            make_silo("/workspace/team1/project/repo", "repo", "main"),
+            make_silo("/workspace/team1/other/repo", "repo", "main"),
+            make_silo("/workspace/team2/project/repo", "repo", "main"),
+        ];
+        let names = generate_display_names(&silos, false);
+        // Each silo gets the minimal name needed to be unique:
+        // - First and third conflict on "project/repo/main", need team1/team2 prefix
+        // - Second is unique at "other/repo/main" (no other "other" directory)
+        assert_eq!(
+            names,
+            vec![
+                "team1/project/repo/main",
+                "other/repo/main",
+                "team2/project/repo/main"
+            ]
+        );
+    }
 }
