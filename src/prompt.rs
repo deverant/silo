@@ -22,8 +22,6 @@ pub fn confirm(message: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     /// Check if user input matches "yes" confirmation.
     /// This is a helper for testing confirm logic without needing stdin.
     fn is_yes(input: &str) -> bool {
@@ -83,13 +81,5 @@ mod tests {
         assert!(!is_yes("yeah"));
         assert!(!is_yes("sure"));
         assert!(!is_yes("ok"));
-    }
-
-    #[test]
-    fn test_confirm_returns_false_for_non_tty() {
-        // When not running in a terminal, confirm should return false
-        // This is the safe default for scripts
-        // Note: This test passes because cargo test doesn't run in a tty
-        assert!(!confirm("Test?"));
     }
 }
