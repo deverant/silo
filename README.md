@@ -66,3 +66,15 @@ If a name is ambiguous, silo shows matching options.
 3. Commit your changes
 4. Remove the silo when done — the branch is preserved
 5. Merge the branch when ready
+
+## Claude Code Integration
+
+Install the silo skill to let Claude use isolated worktrees:
+
+```bash
+# Project-level (current repo only)
+silo skill init
+
+# Global (all projects)
+silo skill init --global
+```
