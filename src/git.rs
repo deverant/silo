@@ -1,6 +1,8 @@
 use crate::error::{Result, SiloError};
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use tracing::{debug, warn};
 
 /// Controls whether git operations print their output
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
@@ -20,11 +22,9 @@ pub struct Worktree {
 
 impl Worktree {
     /// Get the worktree name from its directory path.
-    pub fn name(&self) -> &str {
-        self.path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("unknown")
+    /// Returns None if the path has no file name or if it's not valid UTF-8.
+    pub fn name(&self) -> Option<&str> {
+        self.path.file_name().and_then(|n| n.to_str())
     }
 
     /// Get the branch name, or "(detached)" if in detached HEAD state.
@@ -49,9 +49,24 @@ fn git_command(repo_root: &Path) -> Command {
     cmd
 }
 
+/// Format command arguments for logging
+fn format_args(cmd: &Command) -> String {
+    cmd.get_args()
+        .map(OsStr::to_string_lossy)
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Run a git command and return stdout on success, or formatted error on failure.
 /// If `verbosity` is `Verbose`, prints stdout and stderr.
 fn run_git(mut cmd: Command, error_context: &str, verbosity: Verbosity) -> Result<String> {
+    let cwd = cmd
+        .get_current_dir()
+        .map(Path::to_string_lossy)
+        .unwrap_or_else(|| ".".into());
+    let args = format_args(&cmd);
+    debug!(cwd = %cwd, "git {}", args);
+
     let output = cmd.output()?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -68,6 +83,11 @@ fn run_git(mut cmd: Command, error_context: &str, verbosity: Verbosity) -> Resul
     }
 
     if !output.status.success() {
+        warn!(
+            exit_code = ?output.status.code(),
+            stderr = %stderr.trim(),
+            "{}", error_context
+        );
         return Err(SiloError::Git(format!(
             "{}: {}",
             error_context,
@@ -81,6 +101,13 @@ fn run_git(mut cmd: Command, error_context: &str, verbosity: Verbosity) -> Resul
 /// Run a git command with inherited stdin/stdout/stderr for interactive use.
 /// Returns Ok on success, or formatted error on failure.
 fn run_git_interactive(mut cmd: Command, error_context: &str) -> Result<()> {
+    let cwd = cmd
+        .get_current_dir()
+        .map(Path::to_string_lossy)
+        .unwrap_or_else(|| ".".into());
+    let args = format_args(&cmd);
+    debug!(cwd = %cwd, "git {}", args);
+
     let status = cmd
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
@@ -88,6 +115,7 @@ fn run_git_interactive(mut cmd: Command, error_context: &str) -> Result<()> {
         .status()?;
 
     if !status.success() {
+        warn!(exit_code = ?status.code(), "{}", error_context);
         return Err(SiloError::Git(error_context.to_string()));
     }
     Ok(())
@@ -111,6 +139,7 @@ pub fn get_repo_root() -> Result<PathBuf> {
 /// Try to get the root directory of the current git repository
 /// Returns None if not in a git repository
 pub fn try_get_repo_root() -> Option<PathBuf> {
+    debug!("git rev-parse --show-toplevel");
     let output = Command::new("git")
         .args(["rev-parse", "--show-toplevel"])
         .output()
@@ -129,6 +158,7 @@ pub fn try_get_repo_root() -> Option<PathBuf> {
 /// otherwise calls `get_repo_root()`.
 pub fn get_repo_name(repo_root: Option<&Path>) -> Result<String> {
     // Try to get from origin URL first
+    debug!("git remote get-url origin");
     let output = Command::new("git")
         .args(["remote", "get-url", "origin"])
         .output()?;
@@ -146,10 +176,15 @@ pub fn get_repo_name(repo_root: Option<&Path>) -> Result<String> {
         Some(r) => r.to_path_buf(),
         None => get_repo_root()?,
     };
-    root.file_name()
-        .and_then(|n| n.to_str())
-        .map(|s| s.to_string())
-        .ok_or_else(|| SiloError::Git("Could not determine repository name".to_string()))
+    let name = root
+        .file_name()
+        .ok_or_else(|| SiloError::Git("Repository path has no directory name".to_string()))?;
+    name.to_str().map(|s| s.to_string()).ok_or_else(|| {
+        SiloError::Git(format!(
+            "Repository directory name is not valid UTF-8: {:?}",
+            name
+        ))
+    })
 }
 
 fn extract_repo_name_from_url(url: &str) -> Option<String> {

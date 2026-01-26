@@ -3,6 +3,7 @@ use crate::git;
 use crate::names;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use tracing::warn;
 
 /// Information about a silo (isolated git worktree)
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -99,11 +100,16 @@ pub fn collect_all_silos() -> Result<Vec<Silo>, String> {
         };
 
         // Get repo name from the main worktree
-        let repo_name = main_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| "unknown".to_string());
+        let repo_name = match main_path.file_name().and_then(|n| n.to_str()) {
+            Some(name) => name.to_string(),
+            None => {
+                warn!(
+                    path = %main_path.display(),
+                    "Skipping repo with non-UTF-8 directory name"
+                );
+                continue;
+            }
+        };
 
         // List worktrees and collect silos
         if let Ok(worktrees) = git::list_worktrees(&main_path) {
@@ -113,10 +119,19 @@ pub fn collect_all_silos() -> Result<Vec<Silo>, String> {
                     continue;
                 }
 
+                // Get silo name, skip if not valid UTF-8
+                let Some(silo_name) = wt.name() else {
+                    warn!(
+                        path = %wt.path.display(),
+                        "Skipping silo with non-UTF-8 directory name"
+                    );
+                    continue;
+                };
+
                 // Deduplicate: only add if we haven't seen this path before
                 if seen_paths.insert(wt.path.clone()) {
                     silos.push(Silo {
-                        name: wt.name().to_string(),
+                        name: silo_name.to_string(),
                         branch: wt.branch.clone(),
                         main_worktree: main_path.clone(),
                         storage_path: wt.path.clone(),
@@ -137,19 +152,22 @@ pub fn collect_silos_for_repo(repo_root: &Path) -> Result<Vec<Silo>, String> {
     let repo_name = repo_root
         .file_name()
         .and_then(|n| n.to_str())
-        .unwrap_or("unknown")
+        .ok_or_else(|| "Repository path has non-UTF-8 directory name".to_string())?
         .to_string();
 
     let silos = worktrees
         .into_iter()
         .skip(1) // Skip main worktree
         .filter(|wt| is_silo_path(&wt.path))
-        .map(|wt| Silo {
-            name: wt.name().to_string(),
-            branch: wt.branch,
-            main_worktree: repo_root.to_path_buf(),
-            storage_path: wt.path,
-            repo_name: repo_name.clone(),
+        .filter_map(|wt| {
+            let name = wt.name().map(|s| s.to_string())?;
+            Some(Silo {
+                name,
+                branch: wt.branch,
+                main_worktree: repo_root.to_path_buf(),
+                storage_path: wt.path,
+                repo_name: repo_name.clone(),
+            })
         })
         .collect();
 
@@ -166,7 +184,7 @@ pub fn collect_prunable_repo(repo_root: &Path) -> Result<Vec<Silo>, String> {
     let repo_name = repo_root
         .file_name()
         .and_then(|n| n.to_str())
-        .unwrap_or("unknown")
+        .ok_or_else(|| "Repository path has non-UTF-8 directory name".to_string())?
         .to_string();
 
     for wt in worktrees.iter().skip(1) {
@@ -174,9 +192,14 @@ pub fn collect_prunable_repo(repo_root: &Path) -> Result<Vec<Silo>, String> {
             continue;
         }
 
+        // Skip silos with non-UTF-8 names
+        let Some(silo_name) = wt.name() else {
+            continue;
+        };
+
         if git::is_worktree_clean(&wt.path) {
             to_prune.push(Silo {
-                name: wt.name().to_string(),
+                name: silo_name.to_string(),
                 branch: wt.branch.clone(),
                 main_worktree: repo_root.to_path_buf(),
                 storage_path: wt.path.clone(),
@@ -227,30 +250,42 @@ pub fn collect_prunable_all() -> Result<Vec<Silo>, String> {
             .as_ref()
             .and_then(|silo| git::get_main_worktree_from_silo(silo));
 
-        if let Some(ref main_path) = main_worktree_path
-            && let Ok(worktrees) = git::list_worktrees(main_path)
-        {
-            // Get repo name from the main worktree
-            let repo_name = main_path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("unknown")
-                .to_string();
+        let Some(ref main_path) = main_worktree_path else {
+            continue;
+        };
 
-            for wt in worktrees.iter().skip(1) {
-                if !is_silo_path(&wt.path) {
-                    continue;
-                }
+        let Ok(worktrees) = git::list_worktrees(main_path) else {
+            continue;
+        };
 
-                if git::is_worktree_clean(&wt.path) {
-                    to_prune.push(Silo {
-                        name: wt.name().to_string(),
-                        branch: wt.branch.clone(),
-                        main_worktree: main_path.clone(),
-                        storage_path: wt.path.clone(),
-                        repo_name: repo_name.clone(),
-                    });
-                }
+        // Get repo name from the main worktree, skip if non-UTF-8
+        let Some(repo_name) = main_path.file_name().and_then(|n| n.to_str()) else {
+            warn!(
+                path = %main_path.display(),
+                "Skipping repo with non-UTF-8 directory name"
+            );
+            continue;
+        };
+        let repo_name = repo_name.to_string();
+
+        for wt in worktrees.iter().skip(1) {
+            if !is_silo_path(&wt.path) {
+                continue;
+            }
+
+            // Skip silos with non-UTF-8 names
+            let Some(silo_name) = wt.name() else {
+                continue;
+            };
+
+            if git::is_worktree_clean(&wt.path) {
+                to_prune.push(Silo {
+                    name: silo_name.to_string(),
+                    branch: wt.branch.clone(),
+                    main_worktree: main_path.clone(),
+                    storage_path: wt.path.clone(),
+                    repo_name: repo_name.clone(),
+                });
             }
         }
     }

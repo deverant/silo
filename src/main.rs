@@ -2,6 +2,7 @@ use clap::{
     CommandFactory, FromArgMatches, Parser, Subcommand,
     builder::styling::{AnsiColor, Effects, Styles},
 };
+use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 const STYLES: Styles = Styles::styled()
     .header(AnsiColor::Yellow.on_default().effects(Effects::BOLD))
@@ -42,6 +43,10 @@ struct Cli {
     /// Suppress non-error output
     #[arg(short, long, global = true)]
     quiet: bool,
+
+    /// Enable verbose output (debug-level logging)
+    #[arg(short = 'v', long, global = true)]
+    verbose: bool,
 }
 
 #[derive(Subcommand)]
@@ -183,6 +188,21 @@ enum SkillCommands {
 fn main() {
     let cli = Cli::command().get_matches();
     let cli = Cli::from_arg_matches(&cli).expect("clap argument parsing invariant");
+
+    // Initialize tracing with appropriate filter level
+    // RUST_LOG env var takes precedence, otherwise use --verbose flag
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        if cli.verbose {
+            EnvFilter::new("debug")
+        } else {
+            EnvFilter::new("warn")
+        }
+    });
+
+    tracing_subscriber::registry()
+        .with(fmt::layer().with_target(false).without_time())
+        .with(filter)
+        .init();
 
     let Some(command) = cli.command else {
         // Print help when no command is provided

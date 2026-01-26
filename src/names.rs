@@ -20,10 +20,12 @@ pub enum ResolveResult<'a> {
 
 /// Generate a short hash from a path for unique directory naming.
 /// Returns first 8 characters of SHA-256 hash.
+/// Uses raw bytes from the OS path representation to avoid lossy conversion.
 #[must_use]
 pub fn path_hash(path: &Path) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(path.to_string_lossy().as_bytes());
+    // Use raw bytes to preserve exact path identity regardless of encoding
+    hasher.update(path.as_os_str().as_encoded_bytes());
     let result = hasher.finalize();
     // Take first 4 bytes (8 hex chars)
     format!(
@@ -53,11 +55,15 @@ pub fn silo_storage_path(
 
 /// Extract path components from a path, bottom-up (child first).
 /// For `/a/b/c/repo`, returns `["repo", "c", "b", "a"]`.
+/// Skips components that are not valid UTF-8.
 fn path_components(path: &Path) -> Vec<String> {
     let mut components = Vec::new();
     let mut current = path;
     while let Some(name) = current.file_name() {
-        components.push(name.to_string_lossy().to_string());
+        // Only include UTF-8 components; skip non-UTF-8 ones
+        if let Some(s) = name.to_str() {
+            components.push(s.to_string());
+        }
         match current.parent() {
             Some(parent) if parent != current => current = parent,
             _ => break,
