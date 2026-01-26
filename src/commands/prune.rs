@@ -114,11 +114,7 @@ pub fn run(all: bool, dry_run: bool, force: bool, quiet: bool) -> Result<(), Str
     // Execute removals
     for r in removable {
         let display_name = get_display_name(r.silo());
-        if force {
-            r.remove_force(quiet)?;
-        } else {
-            r.remove(quiet)?;
-        }
+        r.remove(force, quiet)?;
         if !quiet {
             println!("Pruned: {}", display_name);
         }

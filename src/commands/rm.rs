@@ -38,11 +38,7 @@ pub fn run(name: String, dry_run: bool, force: bool, quiet: bool) -> Result<(), 
     }
 
     let display = removable.name().to_string();
-    if force {
-        removable.remove_force(quiet)?;
-    } else {
-        removable.remove(quiet)?;
-    }
+    removable.remove(force, quiet)?;
     if !quiet {
         println!("Removed silo: {}", display);
     }
