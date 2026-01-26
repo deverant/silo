@@ -8,6 +8,7 @@ clap = { version = "4", features = ["derive", "color"] }
 libc = "0.2"
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.10"
+thiserror = "2"
 toml = "0.9"
 
 [dev-dependencies]

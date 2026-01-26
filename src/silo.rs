@@ -257,3 +257,60 @@ pub fn collect_prunable_all() -> Result<Vec<Silo>, String> {
 
     Ok(to_prune)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_silo(name: &str, branch: Option<&str>) -> Silo {
+        Silo {
+            name: name.to_string(),
+            branch: branch.map(|s| s.to_string()),
+            main_worktree: PathBuf::from("/test/repo"),
+            storage_path: PathBuf::from(format!("/test/silos/{}", name)),
+            repo_name: "repo".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_silo_branch_name_with_branch() {
+        let silo = make_silo("feature", Some("feature-branch"));
+        assert_eq!(silo.branch_name(), "feature-branch");
+    }
+
+    #[test]
+    fn test_silo_branch_name_detached() {
+        let silo = make_silo("feature", None);
+        // Falls back to silo name when detached
+        assert_eq!(silo.branch_name(), "feature");
+    }
+
+    #[test]
+    fn test_silo_equality() {
+        let silo1 = make_silo("feature", Some("branch"));
+        let silo2 = make_silo("feature", Some("branch"));
+        assert_eq!(silo1, silo2);
+    }
+
+    #[test]
+    fn test_silo_inequality_name() {
+        let silo1 = make_silo("feature1", Some("branch"));
+        let silo2 = make_silo("feature2", Some("branch"));
+        assert_ne!(silo1, silo2);
+    }
+
+    #[test]
+    fn test_silo_clone() {
+        let silo = make_silo("feature", Some("branch"));
+        let cloned = silo.clone();
+        assert_eq!(silo, cloned);
+    }
+
+    #[test]
+    fn test_silo_debug() {
+        let silo = make_silo("feature", Some("branch"));
+        let debug = format!("{:?}", silo);
+        assert!(debug.contains("feature"));
+        assert!(debug.contains("branch"));
+    }
+}

@@ -122,4 +122,73 @@ mod tests {
         let merged = base.merge(other);
         assert_eq!(merged.worktree_dir, None);
     }
+
+    #[test]
+    fn test_get_worktree_dir_absolute_path() {
+        let config = Config {
+            worktree_dir: Some("/absolute/path/to/silos".to_string()),
+        };
+        let result = config.get_worktree_dir();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), PathBuf::from("/absolute/path/to/silos"));
+    }
+
+    #[test]
+    fn test_get_worktree_dir_tilde_expansion() {
+        let config = Config {
+            worktree_dir: Some("~/my/silos".to_string()),
+        };
+        let result = config.get_worktree_dir();
+        assert!(result.is_ok());
+        let path = result.unwrap();
+        // Should start with home directory, not ~
+        assert!(!path.to_string_lossy().starts_with('~'));
+        assert!(path.to_string_lossy().ends_with("my/silos"));
+    }
+
+    #[test]
+    fn test_get_worktree_dir_relative_path() {
+        let config = Config {
+            worktree_dir: Some("relative/path".to_string()),
+        };
+        let result = config.get_worktree_dir();
+        assert!(result.is_ok());
+        let path = result.unwrap();
+        // Relative paths are treated as relative to home
+        assert!(path.to_string_lossy().ends_with("relative/path"));
+    }
+
+    #[test]
+    fn test_get_worktree_dir_default() {
+        let config = Config { worktree_dir: None };
+        let result = config.get_worktree_dir();
+        assert!(result.is_ok());
+        let path = result.unwrap();
+        // Default is .local/var/silo
+        assert!(path.to_string_lossy().ends_with(".local/var/silo"));
+    }
+
+    #[test]
+    fn test_config_default() {
+        let config = Config::default();
+        assert!(config.worktree_dir.is_none());
+    }
+
+    #[test]
+    fn test_config_clone() {
+        let config = Config {
+            worktree_dir: Some("/test".to_string()),
+        };
+        let cloned = config.clone();
+        assert_eq!(config.worktree_dir, cloned.worktree_dir);
+    }
+
+    #[test]
+    fn test_config_debug() {
+        let config = Config {
+            worktree_dir: Some("/test".to_string()),
+        };
+        let debug = format!("{:?}", config);
+        assert!(debug.contains("/test"));
+    }
 }

@@ -13,6 +13,7 @@ mod color;
 mod commands;
 mod complete;
 mod config;
+mod error;
 mod git;
 mod names;
 mod process;
@@ -195,6 +196,12 @@ fn main() {
 
     if let Err(e) = result {
         eprintln!("Error: {}", e);
-        std::process::exit(1);
+        // Use specific exit codes for different error types
+        let exit_code = match e.as_str() {
+            s if s.starts_with("Not in a git repository") => 2,
+            s if s.contains("not found") || s.contains("Not found") => 2,
+            _ => 1,
+        };
+        std::process::exit(exit_code);
     }
 }

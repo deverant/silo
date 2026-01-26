@@ -1,3 +1,4 @@
+use crate::error::{Result, SiloError};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -39,23 +40,23 @@ fn git_command(repo_root: &Path) -> Command {
 }
 
 /// Run a git command and return stdout on success, or formatted error on failure
-fn run_git(cmd: &mut Command, error_context: &str) -> Result<String, String> {
-    let output = cmd
-        .output()
-        .map_err(|e| format!("Failed to run git: {}", e))?;
+fn run_git(cmd: &mut Command, error_context: &str) -> Result<String> {
+    let output = cmd.output()?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("{}: {}", error_context, stderr.trim()));
+        return Err(SiloError::Git(format!(
+            "{}: {}",
+            error_context,
+            stderr.trim()
+        )));
     }
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 /// Run a git command and print its output (stdout and stderr).
 /// Returns the output on success, or formatted error on failure.
-fn run_git_verbose(cmd: &mut Command, error_context: &str) -> Result<String, String> {
-    let output = cmd
-        .output()
-        .map_err(|e| format!("Failed to run git: {}", e))?;
+fn run_git_verbose(cmd: &mut Command, error_context: &str) -> Result<String> {
+    let output = cmd.output()?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -71,7 +72,11 @@ fn run_git_verbose(cmd: &mut Command, error_context: &str) -> Result<String, Str
     }
 
     if !output.status.success() {
-        return Err(format!("{}: {}", error_context, stderr.trim()));
+        return Err(SiloError::Git(format!(
+            "{}: {}",
+            error_context,
+            stderr.trim()
+        )));
     }
 
     Ok(stdout.into_owned())
@@ -79,22 +84,21 @@ fn run_git_verbose(cmd: &mut Command, error_context: &str) -> Result<String, Str
 
 /// Run a git command with inherited stdin/stdout/stderr for interactive use.
 /// Returns Ok on success, or formatted error on failure.
-fn run_git_interactive(cmd: &mut Command, error_context: &str) -> Result<(), String> {
+fn run_git_interactive(cmd: &mut Command, error_context: &str) -> Result<()> {
     let status = cmd
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
-        .status()
-        .map_err(|e| format!("Failed to run git: {}", e))?;
+        .status()?;
 
     if !status.success() {
-        return Err(error_context.to_string());
+        return Err(SiloError::Git(error_context.to_string()));
     }
     Ok(())
 }
 
 /// Get complete repository information (name and root path)
-pub fn get_repo_info() -> Result<RepoInfo, String> {
+pub fn get_repo_info() -> Result<RepoInfo> {
     let main_worktree = get_repo_root()?;
     let name = get_repo_name()?;
     Ok(RepoInfo {
@@ -104,8 +108,8 @@ pub fn get_repo_info() -> Result<RepoInfo, String> {
 }
 
 /// Get the root directory of the current git repository
-pub fn get_repo_root() -> Result<PathBuf, String> {
-    try_get_repo_root().ok_or_else(|| "Not in a git repository".to_string())
+pub fn get_repo_root() -> Result<PathBuf> {
+    try_get_repo_root().ok_or(SiloError::NotInRepo)
 }
 
 /// Try to get the root directory of the current git repository
@@ -125,12 +129,11 @@ pub fn try_get_repo_root() -> Option<PathBuf> {
 }
 
 /// Get the repository name from the origin remote URL or directory name
-pub fn get_repo_name() -> Result<String, String> {
+pub fn get_repo_name() -> Result<String> {
     // Try to get from origin URL first
     let output = Command::new("git")
         .args(["remote", "get-url", "origin"])
-        .output()
-        .map_err(|e| format!("Failed to run git: {}", e))?;
+        .output()?;
 
     if output.status.success() {
         let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -145,7 +148,7 @@ pub fn get_repo_name() -> Result<String, String> {
     root.file_name()
         .and_then(|n| n.to_str())
         .map(|s| s.to_string())
-        .ok_or_else(|| "Could not determine repository name".to_string())
+        .ok_or_else(|| SiloError::Git("Could not determine repository name".to_string()))
 }
 
 fn extract_repo_name_from_url(url: &str) -> Option<String> {
@@ -163,7 +166,7 @@ fn extract_repo_name_from_url(url: &str) -> Option<String> {
 }
 
 /// Create a new worktree with a new branch
-pub fn create_worktree(path: &Path, branch: &str, repo_root: &Path) -> Result<(), String> {
+pub fn create_worktree(path: &Path, branch: &str, repo_root: &Path) -> Result<()> {
     run_git(
         git_command(repo_root)
             .args(["worktree", "add", "-b", branch])
@@ -174,7 +177,7 @@ pub fn create_worktree(path: &Path, branch: &str, repo_root: &Path) -> Result<()
 }
 
 /// Create a new worktree with a new branch, printing git output
-pub fn create_worktree_verbose(path: &Path, branch: &str, repo_root: &Path) -> Result<(), String> {
+pub fn create_worktree_verbose(path: &Path, branch: &str, repo_root: &Path) -> Result<()> {
     run_git_verbose(
         git_command(repo_root)
             .args(["worktree", "add", "-b", branch])
@@ -186,7 +189,7 @@ pub fn create_worktree_verbose(path: &Path, branch: &str, repo_root: &Path) -> R
 
 /// Remove a worktree
 /// If force is true, removes even if there are uncommitted changes
-pub fn remove_worktree(path: &Path, repo_root: &Path, force: bool) -> Result<(), String> {
+pub fn remove_worktree(path: &Path, repo_root: &Path, force: bool) -> Result<()> {
     let mut cmd = git_command(repo_root);
     cmd.args(["worktree", "remove"]);
     if force {
@@ -199,7 +202,7 @@ pub fn remove_worktree(path: &Path, repo_root: &Path, force: bool) -> Result<(),
 
 /// Remove a worktree, printing git output
 /// If force is true, removes even if there are uncommitted changes
-pub fn remove_worktree_verbose(path: &Path, repo_root: &Path, force: bool) -> Result<(), String> {
+pub fn remove_worktree_verbose(path: &Path, repo_root: &Path, force: bool) -> Result<()> {
     let mut cmd = git_command(repo_root);
     cmd.args(["worktree", "remove"]);
     if force {
@@ -211,7 +214,7 @@ pub fn remove_worktree_verbose(path: &Path, repo_root: &Path, force: bool) -> Re
 }
 
 /// List all worktrees for the current repository
-pub fn list_worktrees(repo_root: &Path) -> Result<Vec<Worktree>, String> {
+pub fn list_worktrees(repo_root: &Path) -> Result<Vec<Worktree>> {
     let output = run_git(
         git_command(repo_root).args(["worktree", "list", "--porcelain"]),
         "Failed to list worktrees",
@@ -385,7 +388,7 @@ pub fn is_branch_merged(repo_root: &Path, branch: &str, main_branch: &str) -> bo
 }
 
 /// Delete a branch
-pub fn delete_branch(repo_root: &Path, branch: &str) -> Result<(), String> {
+pub fn delete_branch(repo_root: &Path, branch: &str) -> Result<()> {
     run_git(
         git_command(repo_root).args(["branch", "-d", branch]),
         "Failed to delete branch",
@@ -394,7 +397,7 @@ pub fn delete_branch(repo_root: &Path, branch: &str) -> Result<(), String> {
 }
 
 /// Delete a branch, printing git output
-pub fn delete_branch_verbose(repo_root: &Path, branch: &str) -> Result<(), String> {
+pub fn delete_branch_verbose(repo_root: &Path, branch: &str) -> Result<()> {
     run_git_verbose(
         git_command(repo_root).args(["branch", "-d", branch]),
         "Failed to delete branch",
@@ -403,7 +406,7 @@ pub fn delete_branch_verbose(repo_root: &Path, branch: &str) -> Result<(), Strin
 }
 
 /// Rebase the current branch onto another branch (quiet mode)
-pub fn rebase_onto(worktree_path: &Path, base_branch: &str) -> Result<(), String> {
+pub fn rebase_onto(worktree_path: &Path, base_branch: &str) -> Result<()> {
     run_git(
         git_command(worktree_path).args(["rebase", base_branch]),
         "Failed to rebase",
@@ -412,7 +415,7 @@ pub fn rebase_onto(worktree_path: &Path, base_branch: &str) -> Result<(), String
 }
 
 /// Rebase the current branch onto another branch with interactive output
-pub fn rebase_onto_interactive(worktree_path: &Path, base_branch: &str) -> Result<(), String> {
+pub fn rebase_onto_interactive(worktree_path: &Path, base_branch: &str) -> Result<()> {
     run_git_interactive(
         git_command(worktree_path).args(["rebase", base_branch]),
         "Failed to rebase",
@@ -420,7 +423,7 @@ pub fn rebase_onto_interactive(worktree_path: &Path, base_branch: &str) -> Resul
 }
 
 /// Merge a branch into the current branch (quiet mode)
-pub fn merge_branch(worktree_path: &Path, branch: &str) -> Result<(), String> {
+pub fn merge_branch(worktree_path: &Path, branch: &str) -> Result<()> {
     run_git(
         git_command(worktree_path).args(["merge", branch]),
         "Failed to merge",
@@ -429,7 +432,7 @@ pub fn merge_branch(worktree_path: &Path, branch: &str) -> Result<(), String> {
 }
 
 /// Merge a branch into the current branch with interactive output
-pub fn merge_branch_interactive(worktree_path: &Path, branch: &str) -> Result<(), String> {
+pub fn merge_branch_interactive(worktree_path: &Path, branch: &str) -> Result<()> {
     run_git_interactive(
         git_command(worktree_path).args(["merge", branch]),
         "Failed to merge",
