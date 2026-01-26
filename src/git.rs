@@ -2,6 +2,16 @@ use crate::error::{Result, SiloError};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// Controls whether git operations print their output
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub enum Verbosity {
+    /// Suppress git output (default)
+    #[default]
+    Quiet,
+    /// Print git stdout and stderr
+    Verbose,
+}
+
 #[derive(Debug, Clone)]
 pub struct Worktree {
     pub path: PathBuf,
@@ -39,36 +49,22 @@ fn git_command(repo_root: &Path) -> Command {
     cmd
 }
 
-/// Run a git command and return stdout on success, or formatted error on failure
-fn run_git(cmd: &mut Command, error_context: &str) -> Result<String> {
+/// Run a git command and return stdout on success, or formatted error on failure.
+/// If `verbosity` is `Verbose`, prints stdout and stderr.
+fn run_git(mut cmd: Command, error_context: &str, verbosity: Verbosity) -> Result<String> {
     let output = cmd.output()?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(SiloError::Git(format!(
-            "{}: {}",
-            error_context,
-            stderr.trim()
-        )));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
-}
-
-/// Run a git command and print its output (stdout and stderr).
-/// Returns the output on success, or formatted error on failure.
-fn run_git_verbose(cmd: &mut Command, error_context: &str) -> Result<String> {
-    let output = cmd.output()?;
-
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    // Print stdout if non-empty
-    if !stdout.trim().is_empty() {
-        print!("{}", stdout);
-    }
-
-    // Print stderr (git often writes progress to stderr even on success)
-    if !stderr.trim().is_empty() && output.status.success() {
-        eprint!("{}", stderr);
+    if verbosity == Verbosity::Verbose {
+        // Print stdout if non-empty
+        if !stdout.trim().is_empty() {
+            print!("{}", stdout);
+        }
+        // Print stderr (git often writes progress to stderr even on success)
+        if !stderr.trim().is_empty() && output.status.success() {
+            eprint!("{}", stderr);
+        }
     }
 
     if !output.status.success() {
@@ -84,7 +80,7 @@ fn run_git_verbose(cmd: &mut Command, error_context: &str) -> Result<String> {
 
 /// Run a git command with inherited stdin/stdout/stderr for interactive use.
 /// Returns Ok on success, or formatted error on failure.
-fn run_git_interactive(cmd: &mut Command, error_context: &str) -> Result<()> {
+fn run_git_interactive(mut cmd: Command, error_context: &str) -> Result<()> {
     let status = cmd
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
@@ -100,7 +96,7 @@ fn run_git_interactive(cmd: &mut Command, error_context: &str) -> Result<()> {
 /// Get complete repository information (name and root path)
 pub fn get_repo_info() -> Result<RepoInfo> {
     let main_worktree = get_repo_root()?;
-    let name = get_repo_name()?;
+    let name = get_repo_name(Some(&main_worktree))?;
     Ok(RepoInfo {
         main_worktree,
         name,
@@ -128,8 +124,10 @@ pub fn try_get_repo_root() -> Option<PathBuf> {
     Some(PathBuf::from(path))
 }
 
-/// Get the repository name from the origin remote URL or directory name
-pub fn get_repo_name() -> Result<String> {
+/// Get the repository name from the origin remote URL or directory name.
+/// If `repo_root` is provided, uses it for the fallback directory name;
+/// otherwise calls `get_repo_root()`.
+pub fn get_repo_name(repo_root: Option<&Path>) -> Result<String> {
     // Try to get from origin URL first
     let output = Command::new("git")
         .args(["remote", "get-url", "origin"])
@@ -144,7 +142,10 @@ pub fn get_repo_name() -> Result<String> {
     }
 
     // Fall back to directory name
-    let root = get_repo_root()?;
+    let root = match repo_root {
+        Some(r) => r.to_path_buf(),
+        None => get_repo_root()?,
+    };
     root.file_name()
         .and_then(|n| n.to_str())
         .map(|s| s.to_string())
@@ -166,65 +167,49 @@ fn extract_repo_name_from_url(url: &str) -> Option<String> {
 }
 
 /// Create a new worktree with a new branch
-pub fn create_worktree(path: &Path, branch: &str, repo_root: &Path) -> Result<()> {
-    run_git(
-        git_command(repo_root)
-            .args(["worktree", "add", "-b", branch])
-            .arg(path),
-        "Failed to create worktree",
-    )?;
-    Ok(())
-}
-
-/// Create a new worktree with a new branch, printing git output
-pub fn create_worktree_verbose(path: &Path, branch: &str, repo_root: &Path) -> Result<()> {
-    run_git_verbose(
-        git_command(repo_root)
-            .args(["worktree", "add", "-b", branch])
-            .arg(path),
-        "Failed to create worktree",
-    )?;
+pub fn create_worktree(
+    path: &Path,
+    branch: &str,
+    repo_root: &Path,
+    verbosity: Verbosity,
+) -> Result<()> {
+    let mut cmd = git_command(repo_root);
+    cmd.args(["worktree", "add", "-b", branch]).arg(path);
+    run_git(cmd, "Failed to create worktree", verbosity)?;
     Ok(())
 }
 
 /// Remove a worktree
 /// If force is true, removes even if there are uncommitted changes
-pub fn remove_worktree(path: &Path, repo_root: &Path, force: bool) -> Result<()> {
+pub fn remove_worktree(
+    path: &Path,
+    repo_root: &Path,
+    force: bool,
+    verbosity: Verbosity,
+) -> Result<()> {
     let mut cmd = git_command(repo_root);
     cmd.args(["worktree", "remove"]);
     if force {
         cmd.arg("--force");
     }
     cmd.arg(path);
-    run_git(&mut cmd, "Failed to remove worktree")?;
-    Ok(())
-}
-
-/// Remove a worktree, printing git output
-/// If force is true, removes even if there are uncommitted changes
-pub fn remove_worktree_verbose(path: &Path, repo_root: &Path, force: bool) -> Result<()> {
-    let mut cmd = git_command(repo_root);
-    cmd.args(["worktree", "remove"]);
-    if force {
-        cmd.arg("--force");
-    }
-    cmd.arg(path);
-    run_git_verbose(&mut cmd, "Failed to remove worktree")?;
+    run_git(cmd, "Failed to remove worktree", verbosity)?;
     Ok(())
 }
 
 /// List all worktrees for the current repository
+#[must_use = "consider using the returned worktree list"]
 pub fn list_worktrees(repo_root: &Path) -> Result<Vec<Worktree>> {
-    let output = run_git(
-        git_command(repo_root).args(["worktree", "list", "--porcelain"]),
-        "Failed to list worktrees",
-    )?;
+    let mut cmd = git_command(repo_root);
+    cmd.args(["worktree", "list", "--porcelain"]);
+    let output = run_git(cmd, "Failed to list worktrees", Verbosity::Quiet)?;
     Ok(parse_worktree_list(&output))
 }
 
 /// Get the number of commits ahead and behind between two branches
 /// Returns (ahead, behind) where ahead is commits in branch not in base,
 /// and behind is commits in base not in branch
+#[must_use]
 pub fn get_ahead_behind(worktree_path: &Path, branch: &str, base_branch: &str) -> (u32, u32) {
     let output = git_command(worktree_path)
         .args(["rev-list", "--left-right", "--count"])
@@ -249,6 +234,7 @@ pub fn get_ahead_behind(worktree_path: &Path, branch: &str, base_branch: &str) -
 
 /// Get the total lines added and removed between two branches
 /// Returns (added, removed)
+#[must_use]
 pub fn get_diff_stats(worktree_path: &Path, branch: &str, base_branch: &str) -> (u32, u32) {
     let output = git_command(worktree_path)
         .args(["diff", "--numstat"])
@@ -300,12 +286,16 @@ impl UncommittedStats {
         self.staged == 0 && self.modified == 0 && self.untracked == 0
     }
 
+    #[must_use]
     pub fn total(&self) -> u32 {
-        self.staged + self.modified + self.untracked
+        self.staged
+            .saturating_add(self.modified)
+            .saturating_add(self.untracked)
     }
 }
 
 /// Get stats about uncommitted changes in a worktree
+#[must_use]
 pub fn get_uncommitted_stats(path: &Path) -> UncommittedStats {
     let output = git_command(path).args(["status", "--porcelain"]).output();
 
@@ -344,6 +334,7 @@ pub fn get_uncommitted_stats(path: &Path) -> UncommittedStats {
 }
 
 /// Get list of uncommitted file names in a worktree
+#[must_use]
 pub fn get_uncommitted_files(path: &Path) -> Vec<String> {
     let output = git_command(path).args(["status", "--porcelain"]).output();
 
@@ -388,137 +379,80 @@ pub fn is_branch_merged(repo_root: &Path, branch: &str, main_branch: &str) -> bo
 }
 
 /// Delete a branch
-pub fn delete_branch(repo_root: &Path, branch: &str) -> Result<()> {
-    run_git(
-        git_command(repo_root).args(["branch", "-d", branch]),
-        "Failed to delete branch",
-    )?;
-    Ok(())
-}
-
-/// Delete a branch, printing git output
-pub fn delete_branch_verbose(repo_root: &Path, branch: &str) -> Result<()> {
-    run_git_verbose(
-        git_command(repo_root).args(["branch", "-d", branch]),
-        "Failed to delete branch",
-    )?;
+pub fn delete_branch(repo_root: &Path, branch: &str, verbosity: Verbosity) -> Result<()> {
+    let mut cmd = git_command(repo_root);
+    cmd.args(["branch", "-d", branch]);
+    run_git(cmd, "Failed to delete branch", verbosity)?;
     Ok(())
 }
 
 /// Rebase the current branch onto another branch (quiet mode)
 pub fn rebase_onto(worktree_path: &Path, base_branch: &str) -> Result<()> {
-    run_git(
-        git_command(worktree_path).args(["rebase", base_branch]),
-        "Failed to rebase",
-    )?;
+    let mut cmd = git_command(worktree_path);
+    cmd.args(["rebase", base_branch]);
+    run_git(cmd, "Failed to rebase", Verbosity::Quiet)?;
     Ok(())
 }
 
 /// Rebase the current branch onto another branch with interactive output
 pub fn rebase_onto_interactive(worktree_path: &Path, base_branch: &str) -> Result<()> {
-    run_git_interactive(
-        git_command(worktree_path).args(["rebase", base_branch]),
-        "Failed to rebase",
-    )
+    let mut cmd = git_command(worktree_path);
+    cmd.args(["rebase", base_branch]);
+    run_git_interactive(cmd, "Failed to rebase")
 }
 
 /// Merge a branch into the current branch (quiet mode)
 pub fn merge_branch(worktree_path: &Path, branch: &str) -> Result<()> {
-    run_git(
-        git_command(worktree_path).args(["merge", branch]),
-        "Failed to merge",
-    )?;
+    let mut cmd = git_command(worktree_path);
+    cmd.args(["merge", branch]);
+    run_git(cmd, "Failed to merge", Verbosity::Quiet)?;
     Ok(())
 }
 
 /// Merge a branch into the current branch with interactive output
 pub fn merge_branch_interactive(worktree_path: &Path, branch: &str) -> Result<()> {
-    run_git_interactive(
-        git_command(worktree_path).args(["merge", branch]),
-        "Failed to merge",
-    )
-}
-
-/// Result of attempting to clean up a branch after worktree removal
-pub struct BranchCleanupResult {
-    pub was_merged: bool,
+    let mut cmd = git_command(worktree_path);
+    cmd.args(["merge", branch]);
+    run_git_interactive(cmd, "Failed to merge")
 }
 
 /// Clean up a branch by deleting it if it was merged into main.
-pub fn cleanup_branch(repo_root: &Path, branch: &str, main_branch: &str) -> BranchCleanupResult {
-    cleanup_branch_internal(repo_root, branch, main_branch, false)
-}
-
-/// Clean up a branch by deleting it if it was merged into main, with verbose output.
-pub fn cleanup_branch_verbose(
+/// Returns true if the branch was merged (and deletion was attempted).
+pub fn cleanup_branch(
     repo_root: &Path,
     branch: &str,
     main_branch: &str,
-) -> BranchCleanupResult {
-    cleanup_branch_internal(repo_root, branch, main_branch, true)
-}
-
-fn cleanup_branch_internal(
-    repo_root: &Path,
-    branch: &str,
-    main_branch: &str,
-    verbose: bool,
-) -> BranchCleanupResult {
+    verbosity: Verbosity,
+) -> bool {
     let was_merged = is_branch_merged(repo_root, branch, main_branch);
     if was_merged {
-        let delete_fn = if verbose {
-            delete_branch_verbose
-        } else {
-            delete_branch
-        };
         // Ignore deletion result - git outputs any errors
-        let _ = delete_fn(repo_root, branch);
+        let _ = delete_branch(repo_root, branch, verbosity);
     }
-    BranchCleanupResult { was_merged }
+    was_merged
 }
 
 /// Get the current HEAD commit hash of a worktree
 pub fn get_head_commit(worktree_path: &Path) -> Result<String> {
-    let output = run_git(
-        git_command(worktree_path).args(["rev-parse", "HEAD"]),
-        "Failed to get HEAD commit",
-    )?;
+    let mut cmd = git_command(worktree_path);
+    cmd.args(["rev-parse", "HEAD"]);
+    let output = run_git(cmd, "Failed to get HEAD commit", Verbosity::Quiet)?;
     Ok(output.trim().to_string())
 }
 
 /// Reset a worktree to a specific commit (hard reset)
-pub fn reset_hard(worktree_path: &Path, commit: &str) -> Result<()> {
-    run_git(
-        git_command(worktree_path).args(["reset", "--hard", commit]),
-        "Failed to reset worktree",
-    )?;
-    Ok(())
-}
-
-/// Reset a worktree to a specific commit (hard reset), printing git output
-pub fn reset_hard_verbose(worktree_path: &Path, commit: &str) -> Result<()> {
-    run_git_verbose(
-        git_command(worktree_path).args(["reset", "--hard", commit]),
-        "Failed to reset worktree",
-    )?;
+pub fn reset_hard(worktree_path: &Path, commit: &str, verbosity: Verbosity) -> Result<()> {
+    let mut cmd = git_command(worktree_path);
+    cmd.args(["reset", "--hard", commit]);
+    run_git(cmd, "Failed to reset worktree", verbosity)?;
     Ok(())
 }
 
 /// Clean untracked files and directories from a worktree
-pub fn clean(worktree_path: &Path) -> Result<()> {
-    run_git(
-        git_command(worktree_path).args(["clean", "-fd"]),
-        "Failed to clean worktree",
-    )?;
-    Ok(())
-}
-
-/// Clean untracked files and directories from a worktree, printing git output
-pub fn clean_verbose(worktree_path: &Path) -> Result<()> {
-    run_git_verbose(
-        git_command(worktree_path).args(["clean", "-fd"]),
-        "Failed to clean worktree",
-    )?;
+pub fn clean(worktree_path: &Path, verbosity: Verbosity) -> Result<()> {
+    let mut cmd = git_command(worktree_path);
+    cmd.args(["clean", "-fd"]);
+    run_git(cmd, "Failed to clean worktree", verbosity)?;
     Ok(())
 }
 

@@ -1,6 +1,6 @@
 //! The `reset` command: reset a silo to the main worktree's current commit.
 
-use crate::git;
+use crate::git::{self, Verbosity};
 use crate::prompt;
 use crate::removal::RemovalBlocker;
 use crate::silo::Silo;
@@ -77,16 +77,15 @@ pub fn run(name: String, dry_run: bool, force: bool, quiet: bool) -> Result<(), 
     }
 
     // Perform the reset and clean
-    if quiet {
-        git::reset_hard(&silo.storage_path, &main_commit)
-            .map_err(|e| format!("Failed to reset silo: {}", e))?;
-        git::clean(&silo.storage_path).map_err(|e| format!("Failed to clean silo: {}", e))?;
+    let verbosity = if quiet {
+        Verbosity::Quiet
     } else {
-        git::reset_hard_verbose(&silo.storage_path, &main_commit)
-            .map_err(|e| format!("Failed to reset silo: {}", e))?;
-        git::clean_verbose(&silo.storage_path)
-            .map_err(|e| format!("Failed to clean silo: {}", e))?;
-    }
+        Verbosity::Verbose
+    };
+    git::reset_hard(&silo.storage_path, &main_commit, verbosity)
+        .map_err(|e| format!("Failed to reset silo: {}", e))?;
+    git::clean(&silo.storage_path, verbosity)
+        .map_err(|e| format!("Failed to clean silo: {}", e))?;
 
     if !quiet {
         println!(

@@ -4,7 +4,7 @@
 //! are validated before removal. Use `TryFrom<Silo>` to validate, or
 //! `RemovableSilo::from_silo_unchecked` to skip validation (for --force).
 
-use crate::git;
+use crate::git::{self, Verbosity};
 use crate::process;
 use crate::silo::Silo;
 use std::fmt;
@@ -186,11 +186,18 @@ impl RemovableSilo {
     /// If `force` is true, removes even if there are uncommitted changes.
     /// If `quiet` is true, suppresses normal output (errors still shown).
     pub fn remove(self, force: bool, quiet: bool) -> Result<(), String> {
-        if quiet {
-            git::remove_worktree(&self.silo.storage_path, &self.silo.main_worktree, force)?;
+        let verbosity = if quiet {
+            Verbosity::Quiet
         } else {
-            git::remove_worktree_verbose(&self.silo.storage_path, &self.silo.main_worktree, force)?;
-        }
+            Verbosity::Verbose
+        };
+
+        git::remove_worktree(
+            &self.silo.storage_path,
+            &self.silo.main_worktree,
+            force,
+            verbosity,
+        )?;
 
         // Clean up process tracking
         if let Err(e) = process::cleanup_tracking(&self.silo.storage_path) {
@@ -199,14 +206,15 @@ impl RemovableSilo {
 
         // Clean up branch if merged
         let branch_name = self.silo.branch_name();
-        let cleanup = if quiet {
-            git::cleanup_branch(&self.silo.main_worktree, branch_name, &self.main_branch)
-        } else {
-            git::cleanup_branch_verbose(&self.silo.main_worktree, branch_name, &self.main_branch)
-        };
+        let was_merged = git::cleanup_branch(
+            &self.silo.main_worktree,
+            branch_name,
+            &self.main_branch,
+            verbosity,
+        );
 
         // Only print "preserved" message - git already outputs deletion info
-        if !quiet && !cleanup.was_merged {
+        if !quiet && !was_merged {
             println!("Preserved branch '{}' (not merged)", branch_name);
         }
 

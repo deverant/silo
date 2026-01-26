@@ -1,6 +1,6 @@
 //! The `new` command: create a new silo with a new branch.
 
-use crate::git;
+use crate::git::{self, Verbosity};
 use crate::shell;
 use crate::silo;
 
@@ -26,12 +26,18 @@ pub fn run(branch: String, command: &[String], dry_run: bool, quiet: bool) -> Re
             .map_err(|e| format!("Failed to create silo directory: {}", e))?;
     }
 
+    let verbosity = if quiet {
+        Verbosity::Quiet
+    } else {
+        Verbosity::Verbose
+    };
+
     if !quiet {
         println!("Creating branch '{}'...", branch);
-        git::create_worktree_verbose(&silo_path, &branch, repo_root)?;
+    }
+    git::create_worktree(&silo_path, &branch, repo_root, verbosity)?;
+    if !quiet {
         println!("Created silo: {}", silo_path.display());
-    } else {
-        git::create_worktree(&silo_path, &branch, repo_root)?;
     }
 
     // Track this silo as the last used
