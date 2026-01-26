@@ -68,6 +68,29 @@ echo -n "Your commit title here" | wc -c
 
 ## Code Patterns
 
+### Rust Idioms
+
+Follow idiomatic Rust practices:
+
+- **Ownership and borrowing**: Prefer borrowing (`&T`, `&mut T`) over cloning. Clone only when ownership transfer is necessary.
+- **Iterators over loops**: Use `.iter()`, `.map()`, `.filter()`, `.collect()` instead of manual `for` loops with `push()`.
+- **Pattern matching**: Use `match` and `if let` for control flow. Avoid nested `if` chains when pattern matching is cleaner.
+- **Option/Result combinators**: Use `.map()`, `.and_then()`, `.unwrap_or()`, `.ok_or()` instead of explicit matching when appropriate.
+- **Early returns**: Use `?` operator and early returns to reduce nesting.
+- **Type inference**: Let the compiler infer types when obvious. Annotate when it aids readability.
+- **Derive traits**: Use `#[derive(...)]` for standard traits (`Debug`, `Clone`, `PartialEq`, etc.) when sensible.
+- **Enums over booleans**: Prefer enums for state that could expand beyond two values.
+
+### Maintainability and Modularity
+
+- **Single responsibility**: Each module and function should do one thing well.
+- **Small functions**: Break large functions into smaller, testable units. If a function exceeds ~50 lines, consider splitting.
+- **Explicit dependencies**: Pass dependencies as parameters rather than relying on global state.
+- **Public API surface**: Keep `pub` items minimal. Only expose what's needed by other modules.
+- **Document invariants**: When a function has preconditions or postconditions, document them.
+- **Avoid premature abstraction**: Don't create traits or generics until you have multiple concrete use cases.
+- **Consistent naming**: Follow Rust naming conventions (snake_case for functions/variables, CamelCase for types).
+
 ### No dead code
 Do not use `#[allow(dead_code)]` anywhere.
 
@@ -116,3 +139,40 @@ Use `run_git()` for operations that need stdout. Git failures include stderr in 
 2. Add `pub mod {shell};` to `shell/mod.rs`
 3. Add variant to `ShellType` enum in `shell/mod.rs`
 4. Add match arm in `commands/shell.rs`
+
+## UNIX CLI Hygiene
+
+Follow the conventions of well-behaved UNIX tools:
+
+### Exit Codes
+- Exit 0 on success, non-zero on failure
+- Use distinct exit codes for different error categories when meaningful
+
+### Output Streams
+- **stdout**: Normal output (data the user requested)
+- **stderr**: Errors, warnings, and diagnostic messages
+- Never mix data and diagnostics on the same stream
+
+### Quiet and Verbose Modes
+- Default output should be minimal and useful
+- Support `--quiet`/`-q` to suppress non-essential output
+- Consider `--verbose`/`-v` for debugging information
+
+### Input/Output Conventions
+- Accept `-` as stdin/stdout when appropriate
+- Produce machine-parseable output for scripting (consider `--json` flag)
+- Respect `NO_COLOR` environment variable for colorized output
+
+### Signals and Interrupts
+- Handle SIGINT (Ctrl+C) gracefully—clean up temporary files
+- Don't trap signals unnecessarily
+
+### Filesystem Etiquette
+- Follow XDG Base Directory spec (`~/.config`, `~/.local/share`, etc.)
+- Don't pollute home directory with dotfiles
+- Clean up temporary files on exit
+
+### Composability
+- Design commands to work well in pipelines
+- One tool, one job—prefer composition over feature bloat
+- Consistent option naming across subcommands
