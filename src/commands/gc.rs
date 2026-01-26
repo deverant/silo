@@ -5,14 +5,14 @@ use crate::silo;
 use std::fs;
 
 pub fn run(dry_run: bool, force: bool, quiet: bool) -> Result<(), String> {
-    // Collect orphaned silos and empty directories
+    // Collect orphaned silos and initially empty directories
     let orphaned_silos = silo::collect_orphaned_silos()?;
-    let empty_dirs = silo::collect_empty_repo_dirs()?;
+    let initial_empty_dirs = silo::collect_empty_repo_dirs()?;
 
     let total_orphaned = orphaned_silos.len();
-    let total_empty = empty_dirs.len();
+    let initial_empty = initial_empty_dirs.len();
 
-    if total_orphaned == 0 && total_empty == 0 {
+    if total_orphaned == 0 && initial_empty == 0 {
         if !quiet {
             println!("No orphaned silos or empty directories to clean up.");
         }
@@ -32,43 +32,62 @@ pub fn run(dry_run: bool, force: bool, quiet: bool) -> Result<(), String> {
             }
         }
 
-        if total_empty > 0 {
+        if initial_empty > 0 {
             println!(
                 "Found {} empty repo director{}:",
-                total_empty,
-                if total_empty == 1 { "y" } else { "ies" }
+                initial_empty,
+                if initial_empty == 1 { "y" } else { "ies" }
             );
-            for dir in &empty_dirs {
+            for dir in &initial_empty_dirs {
                 println!("  {}", dir.display());
             }
         }
     }
 
     if dry_run {
-        println!(
-            "\nWould remove {} orphaned silo(s) and {} empty director{}.",
-            total_orphaned,
-            total_empty,
-            if total_empty == 1 { "y" } else { "ies" }
-        );
+        // In dry-run mode, we can't know exactly how many directories will become
+        // empty after removing orphaned silos, but we note there may be more
+        if total_orphaned > 0 {
+            println!(
+                "\nWould remove {} orphaned silo(s) and at least {} empty director{}.",
+                total_orphaned,
+                initial_empty,
+                if initial_empty == 1 { "y" } else { "ies" }
+            );
+            println!("(Additional directories may become empty after removing orphaned silos.)");
+        } else {
+            println!(
+                "\nWould remove {} empty director{}.",
+                initial_empty,
+                if initial_empty == 1 { "y" } else { "ies" }
+            );
+        }
         return Ok(());
     }
 
     // Confirm before proceeding
     if !force {
-        let message = format!(
-            "Remove {} orphaned silo(s) and {} empty director{}?",
-            total_orphaned,
-            total_empty,
-            if total_empty == 1 { "y" } else { "ies" }
-        );
+        let message = if total_orphaned > 0 {
+            format!(
+                "Remove {} orphaned silo(s) and {} empty director{} (plus any that become empty)?",
+                total_orphaned,
+                initial_empty,
+                if initial_empty == 1 { "y" } else { "ies" }
+            )
+        } else {
+            format!(
+                "Remove {} empty director{}?",
+                initial_empty,
+                if initial_empty == 1 { "y" } else { "ies" }
+            )
+        };
         if !prompt::confirm(&message) {
             println!("Aborted.");
             return Ok(());
         }
     }
 
-    // Remove orphaned silos
+    // Remove orphaned silos first
     let mut removed_silos = 0;
     for orphan in orphaned_silos {
         if let Err(e) = fs::remove_dir_all(&orphan.storage_path) {
@@ -84,6 +103,10 @@ pub fn run(dry_run: bool, force: bool, quiet: bool) -> Result<(), String> {
             }
         }
     }
+
+    // Re-collect empty directories after removing orphaned silos
+    // This catches directories that became empty as a result
+    let empty_dirs = silo::collect_empty_repo_dirs()?;
 
     // Remove empty directories
     let mut removed_dirs = 0;
