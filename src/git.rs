@@ -477,6 +477,51 @@ fn cleanup_branch_internal(
     BranchCleanupResult { was_merged }
 }
 
+/// Get the current HEAD commit hash of a worktree
+pub fn get_head_commit(worktree_path: &Path) -> Result<String> {
+    let output = run_git(
+        git_command(worktree_path).args(["rev-parse", "HEAD"]),
+        "Failed to get HEAD commit",
+    )?;
+    Ok(output.trim().to_string())
+}
+
+/// Reset a worktree to a specific commit (hard reset)
+pub fn reset_hard(worktree_path: &Path, commit: &str) -> Result<()> {
+    run_git(
+        git_command(worktree_path).args(["reset", "--hard", commit]),
+        "Failed to reset worktree",
+    )?;
+    Ok(())
+}
+
+/// Reset a worktree to a specific commit (hard reset), printing git output
+pub fn reset_hard_verbose(worktree_path: &Path, commit: &str) -> Result<()> {
+    run_git_verbose(
+        git_command(worktree_path).args(["reset", "--hard", commit]),
+        "Failed to reset worktree",
+    )?;
+    Ok(())
+}
+
+/// Clean untracked files and directories from a worktree
+pub fn clean(worktree_path: &Path) -> Result<()> {
+    run_git(
+        git_command(worktree_path).args(["clean", "-fd"]),
+        "Failed to clean worktree",
+    )?;
+    Ok(())
+}
+
+/// Clean untracked files and directories from a worktree, printing git output
+pub fn clean_verbose(worktree_path: &Path) -> Result<()> {
+    run_git_verbose(
+        git_command(worktree_path).args(["clean", "-fd"]),
+        "Failed to clean worktree",
+    )?;
+    Ok(())
+}
+
 /// Get the main worktree path from a silo worktree by reading its .git file
 pub fn get_main_worktree_from_silo(silo_path: &Path) -> Option<PathBuf> {
     let git_file = silo_path.join(".git");

@@ -102,7 +102,7 @@ fn complete_leaf(cmd_name: &str, remaining: &[String]) -> Vec<Completion> {
 
     match cmd_name {
         // Commands that take a silo name as first arg
-        "new" | "rm" | "cd" | "exec" | "run" | "rebase" | "merge" | "claude" => {
+        "new" | "rm" | "cd" | "exec" | "run" | "rebase" | "merge" | "reset" | "claude" => {
             if completing_first_arg {
                 silo_names()
             } else {

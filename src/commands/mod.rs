@@ -9,6 +9,7 @@ pub mod merge;
 pub mod new;
 pub mod prune;
 pub mod rebase;
+pub mod reset;
 pub mod rm;
 pub mod sandbox;
 pub mod shell;

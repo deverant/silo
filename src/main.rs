@@ -111,6 +111,16 @@ enum Commands {
         /// Silo to merge (branch, repo/branch, or org/repo/branch)
         name: String,
     },
+    /// Reset a silo to the main worktree's current commit
+    ///
+    /// Discards all changes in the silo and resets it to match the current
+    /// HEAD commit of the main worktree. Use --force to skip confirmation
+    /// when the silo has uncommitted changes or unmerged commits.
+    #[command(after_help = "NAME can be a branch, repo/branch, or org/repo/branch")]
+    Reset {
+        /// Silo to reset (branch, repo/branch, or org/repo/branch)
+        name: String,
+    },
     /// Shell integration commands
     Shell {
         #[command(subcommand)]
@@ -181,6 +191,7 @@ fn main() {
         Commands::Prune { all } => commands::prune::run(all, cli.dry_run, cli.force, cli.quiet),
         Commands::Rebase { name } => commands::rebase::run(name, cli.dry_run, cli.quiet),
         Commands::Merge { name } => commands::merge::run(name, cli.dry_run, cli.quiet),
+        Commands::Reset { name } => commands::reset::run(name, cli.dry_run, cli.force, cli.quiet),
         Commands::Shell { command } => match command {
             ShellCommands::Init { shell } => commands::shell::init(shell),
             ShellCommands::CompleteArgs { args } => {

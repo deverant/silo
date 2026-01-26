@@ -437,6 +437,160 @@ fn test_merge_from_silo_fails() {
 }
 
 // =============================================================================
+// RESET COMMAND TESTS
+// =============================================================================
+
+#[test]
+fn test_reset_success() {
+    let env = TestEnv::new();
+    env.create_silo("feature");
+
+    // Create a commit in the silo
+    env.create_commit_in_silo("feature", "feature.txt", "feature content", "Add feature");
+
+    // Create a commit in main
+    env.create_commit("main.txt", "main content", "Update main");
+
+    // Reset the silo to main's HEAD
+    let output = env.run_silo(&["reset", "feature", "--force"]);
+
+    TestEnv::assert_success(&output);
+
+    // The silo should now have main.txt (from main's current commit)
+    let main_file = env.silo_path("feature").join("main.txt");
+    assert!(main_file.exists(), "Silo should have main.txt after reset");
+
+    // The feature.txt should be gone (it was only in the silo's commits)
+    let feature_file = env.silo_path("feature").join("feature.txt");
+    assert!(
+        !feature_file.exists(),
+        "feature.txt should be gone after reset"
+    );
+}
+
+#[test]
+fn test_reset_nonexistent_fails() {
+    let env = TestEnv::new();
+
+    let output = env.run_silo(&["reset", "nonexistent", "--force"]);
+
+    TestEnv::assert_failure(&output);
+}
+
+#[test]
+fn test_reset_dry_run() {
+    let env = TestEnv::new();
+    env.create_silo("feature");
+    env.create_commit_in_silo("feature", "feature.txt", "content", "Feature");
+
+    let output = env.run_silo(&["reset", "feature", "--dry-run", "--force"]);
+
+    TestEnv::assert_success(&output);
+    let stdout = TestEnv::stdout(&output);
+    assert!(stdout.contains("Would reset"));
+
+    // File should still exist (dry run)
+    let feature_file = env.silo_path("feature").join("feature.txt");
+    assert!(
+        feature_file.exists(),
+        "File should still exist after dry run"
+    );
+}
+
+#[test]
+fn test_reset_with_uncommitted_changes_requires_confirmation() {
+    let env = TestEnv::new();
+    env.create_silo("dirty-silo");
+    env.create_uncommitted_file("dirty-silo", "dirty.txt", "uncommitted");
+
+    // Without --force, should ask for confirmation (fails in non-interactive)
+    let output = env.run_silo(&["reset", "dirty-silo"]);
+    // In non-interactive mode, confirmation defaults to no
+    TestEnv::assert_success(&output);
+    let stdout = TestEnv::stdout(&output);
+    assert!(
+        stdout.contains("Aborted"),
+        "Should abort without confirmation"
+    );
+
+    // File should still exist
+    let dirty_file = env.silo_path("dirty-silo").join("dirty.txt");
+    assert!(dirty_file.exists(), "dirty.txt should still exist");
+}
+
+#[test]
+fn test_reset_with_force_discards_uncommitted_changes() {
+    let env = TestEnv::new();
+    env.create_silo("dirty-silo");
+    env.create_uncommitted_file("dirty-silo", "dirty.txt", "uncommitted");
+
+    // With --force, should reset without asking
+    let output = env.run_silo(&["reset", "dirty-silo", "--force"]);
+
+    TestEnv::assert_success(&output);
+
+    // dirty.txt should be gone
+    let dirty_file = env.silo_path("dirty-silo").join("dirty.txt");
+    assert!(
+        !dirty_file.exists(),
+        "dirty.txt should be removed after reset"
+    );
+}
+
+#[test]
+fn test_reset_with_unmerged_commits_requires_confirmation() {
+    let env = TestEnv::new();
+    env.create_silo("has-commits");
+    env.create_commit_in_silo("has-commits", "new.txt", "content", "Add new file");
+
+    // Without --force, should ask for confirmation (fails in non-interactive)
+    let output = env.run_silo(&["reset", "has-commits"]);
+    TestEnv::assert_success(&output);
+    let stdout = TestEnv::stdout(&output);
+    assert!(
+        stdout.contains("Aborted"),
+        "Should abort without confirmation"
+    );
+
+    // File should still exist
+    let new_file = env.silo_path("has-commits").join("new.txt");
+    assert!(new_file.exists(), "new.txt should still exist");
+}
+
+#[test]
+fn test_reset_with_force_discards_unmerged_commits() {
+    let env = TestEnv::new();
+    env.create_silo("has-commits");
+    env.create_commit_in_silo("has-commits", "new.txt", "content", "Add new file");
+
+    // With --force, should reset without asking
+    let output = env.run_silo(&["reset", "has-commits", "--force"]);
+
+    TestEnv::assert_success(&output);
+
+    // new.txt should be gone
+    let new_file = env.silo_path("has-commits").join("new.txt");
+    assert!(!new_file.exists(), "new.txt should be removed after reset");
+}
+
+#[test]
+fn test_reset_quiet_flag() {
+    let env = TestEnv::new();
+    env.create_silo("quiet-reset");
+    env.create_commit("main.txt", "content", "Add main file");
+
+    let output = env.run_silo(&["reset", "quiet-reset", "--force", "--quiet"]);
+
+    TestEnv::assert_success(&output);
+    let stdout = TestEnv::stdout(&output);
+    // Output should be minimal
+    assert!(
+        stdout.trim().is_empty(),
+        "Quiet reset should produce no stdout"
+    );
+}
+
+// =============================================================================
 // EDGE CASE TESTS
 // =============================================================================
 
