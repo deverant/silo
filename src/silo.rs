@@ -293,6 +293,116 @@ pub fn collect_prunable_all() -> Result<Vec<Silo>, String> {
     Ok(to_prune)
 }
 
+/// An orphaned silo whose main worktree no longer exists.
+/// These silos cannot be cleaned up via normal git worktree commands
+/// and must be removed via filesystem deletion.
+#[derive(Debug, Clone)]
+pub struct OrphanedSilo {
+    /// Path to the silo storage directory
+    pub storage_path: PathBuf,
+    /// Path to the main worktree that no longer exists
+    pub missing_main_worktree: PathBuf,
+}
+
+/// Collect all orphaned silos (main worktree missing).
+/// These are silos whose main worktree directory no longer exists,
+/// making them impossible to manage via git worktree commands.
+pub fn collect_orphaned_silos() -> Result<Vec<OrphanedSilo>, String> {
+    let base_dir = get_silo_base_dir()?;
+
+    if !base_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut orphaned = Vec::new();
+
+    let entries = std::fs::read_dir(&base_dir)
+        .map_err(|e| format!("Failed to read silo directory: {}", e))?;
+
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
+        let repo_silo_dir = entry.path();
+
+        if !repo_silo_dir.is_dir() {
+            continue;
+        }
+
+        // Check each silo in this repo directory
+        let Ok(silo_entries) = std::fs::read_dir(&repo_silo_dir) else {
+            continue;
+        };
+
+        for silo_entry in silo_entries.flatten() {
+            let silo_path = silo_entry.path();
+
+            // Skip hidden files (like .DS_Store) and non-directories
+            let name = silo_entry.file_name();
+            let name_str = name.to_string_lossy();
+            if name_str.starts_with('.') || !silo_path.is_dir() {
+                continue;
+            }
+
+            // Try to get the main worktree from the silo's .git file
+            let Some(main_path) = git::get_main_worktree_from_silo(&silo_path) else {
+                // Can't determine main worktree - might be corrupted, skip
+                continue;
+            };
+
+            // If the main worktree doesn't exist, this silo is orphaned
+            if !main_path.exists() {
+                orphaned.push(OrphanedSilo {
+                    storage_path: silo_path,
+                    missing_main_worktree: main_path,
+                });
+            }
+        }
+    }
+
+    Ok(orphaned)
+}
+
+/// Collect empty repo directories in the silo base directory.
+/// These are directories that once held silos but are now empty
+/// (except possibly for hidden files like .DS_Store).
+pub fn collect_empty_repo_dirs() -> Result<Vec<PathBuf>, String> {
+    let base_dir = get_silo_base_dir()?;
+
+    if !base_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut empty_dirs = Vec::new();
+
+    let entries = std::fs::read_dir(&base_dir)
+        .map_err(|e| format!("Failed to read silo directory: {}", e))?;
+
+    for entry in entries {
+        let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
+        let repo_silo_dir = entry.path();
+
+        if !repo_silo_dir.is_dir() {
+            continue;
+        }
+
+        // Check if directory has any non-hidden entries
+        let has_visible_entries = std::fs::read_dir(&repo_silo_dir)
+            .map(|entries| {
+                entries.filter_map(|e| e.ok()).any(|entry| {
+                    let name = entry.file_name();
+                    let name_str = name.to_string_lossy();
+                    !name_str.starts_with('.')
+                })
+            })
+            .unwrap_or(false);
+
+        if !has_visible_entries {
+            empty_dirs.push(repo_silo_dir);
+        }
+    }
+
+    Ok(empty_dirs)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

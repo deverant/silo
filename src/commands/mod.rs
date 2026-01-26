@@ -4,6 +4,7 @@
 
 pub mod cd;
 pub mod exec;
+pub mod gc;
 pub mod list;
 pub mod merge;
 pub mod new;

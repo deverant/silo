@@ -102,6 +102,11 @@ enum Commands {
         #[arg(short, long)]
         all: bool,
     },
+    /// Remove orphaned silos and empty directories
+    ///
+    /// Cleans up silos whose main worktree no longer exists (e.g., test repos
+    /// created in /tmp that were cleaned up) and empty repo directories.
+    Gc,
     /// Rebase a silo's commits on top of the main branch
     #[command(after_help = "NAME can be a branch, repo/branch, or org/repo/branch")]
     Rebase {
@@ -224,6 +229,7 @@ fn main() {
         Commands::Cd { name } => commands::cd::run(name),
         Commands::Exec { name, command } => commands::exec::run(name, &command, cli.quiet),
         Commands::Prune { all } => commands::prune::run(all, cli.dry_run, cli.force, cli.quiet),
+        Commands::Gc => commands::gc::run(cli.dry_run, cli.force, cli.quiet),
         Commands::Rebase { name } => commands::rebase::run(name, cli.dry_run, cli.quiet),
         Commands::Merge { name } => commands::merge::run(name, cli.dry_run, cli.quiet),
         Commands::Reset { name } => commands::reset::run(name, cli.dry_run, cli.force, cli.quiet),

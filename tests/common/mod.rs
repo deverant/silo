@@ -237,3 +237,36 @@ impl Default for TestEnv {
         Self::new()
     }
 }
+
+impl TestEnv {
+    /// Create an orphaned silo by creating a fake silo that points to a non-existent main worktree.
+    /// Returns the path to the orphaned silo directory.
+    pub fn create_orphaned_silo(&self, name: &str) -> PathBuf {
+        // First create a real silo so we have the directory structure
+        self.create_silo(name);
+        let silo_path = self.silo_path(name);
+
+        // Modify the .git file to point to a non-existent main worktree
+        let git_file = silo_path.join(".git");
+        let fake_main = PathBuf::from("/tmp/nonexistent-repo-12345/.git/worktrees").join(name);
+        let content = format!("gitdir: {}", fake_main.display());
+        fs::write(&git_file, content).expect("Failed to write .git file");
+
+        // Now we need to unregister this worktree from the main repo since git still tracks it
+        // Just remove it from git's perspective by removing the worktree reference in .git/worktrees
+        let worktree_ref = self.repo_dir.path().join(".git/worktrees").join(name);
+        if worktree_ref.exists() {
+            let _ = fs::remove_dir_all(&worktree_ref);
+        }
+
+        silo_path
+    }
+
+    /// Create an empty repo directory in the silo storage.
+    /// Returns the path to the empty directory.
+    pub fn create_empty_repo_dir(&self, name: &str) -> PathBuf {
+        let empty_dir = self.silo_dir.path().join(name);
+        fs::create_dir_all(&empty_dir).expect("Failed to create empty repo dir");
+        empty_dir
+    }
+}

@@ -615,3 +615,99 @@ fn test_quiet_flag_suppresses_output() {
     // Output should be minimal/empty
     assert!(stdout.trim().is_empty() || stdout.len() < 50);
 }
+
+// =============================================================================
+// GC COMMAND TESTS
+// =============================================================================
+
+#[test]
+fn test_gc_removes_orphaned_silos() {
+    let env = TestEnv::new();
+    let orphan_path = env.create_orphaned_silo("orphan-silo");
+
+    // Verify the orphan exists
+    assert!(orphan_path.exists(), "Orphan should exist before gc");
+
+    let output = env.run_silo(&["gc", "--force"]);
+
+    TestEnv::assert_success(&output);
+    assert!(!orphan_path.exists(), "Orphan should be removed after gc");
+}
+
+#[test]
+fn test_gc_removes_empty_directories() {
+    let env = TestEnv::new();
+    let empty_dir = env.create_empty_repo_dir("empty-repo-dir");
+
+    // Verify the empty dir exists
+    assert!(empty_dir.exists(), "Empty dir should exist before gc");
+
+    let output = env.run_silo(&["gc", "--force"]);
+
+    TestEnv::assert_success(&output);
+    assert!(!empty_dir.exists(), "Empty dir should be removed after gc");
+}
+
+#[test]
+fn test_gc_dry_run_does_not_remove() {
+    let env = TestEnv::new();
+    let orphan_path = env.create_orphaned_silo("orphan-silo");
+    let empty_dir = env.create_empty_repo_dir("empty-repo-dir");
+
+    let output = env.run_silo(&["gc", "--dry-run"]);
+
+    TestEnv::assert_success(&output);
+    let stdout = TestEnv::stdout(&output);
+    assert!(stdout.contains("Would remove"));
+    assert!(
+        orphan_path.exists(),
+        "Orphan should still exist after dry-run"
+    );
+    assert!(
+        empty_dir.exists(),
+        "Empty dir should still exist after dry-run"
+    );
+}
+
+#[test]
+fn test_gc_no_orphans_reports_nothing() {
+    let env = TestEnv::new();
+    // Create a valid silo (not orphaned)
+    env.create_silo("valid-silo");
+
+    let output = env.run_silo(&["gc"]);
+
+    TestEnv::assert_success(&output);
+    let stdout = TestEnv::stdout(&output);
+    assert!(stdout.contains("No orphaned silos or empty directories"));
+    env.assert_silo_exists("valid-silo");
+}
+
+#[test]
+fn test_gc_quiet_flag() {
+    let env = TestEnv::new();
+    let _orphan_path = env.create_orphaned_silo("orphan-silo");
+
+    let output = env.run_silo(&["gc", "--force", "--quiet"]);
+
+    TestEnv::assert_success(&output);
+    let stdout = TestEnv::stdout(&output);
+    assert!(
+        stdout.trim().is_empty(),
+        "Quiet gc should produce no stdout"
+    );
+}
+
+#[test]
+fn test_gc_preserves_valid_silos() {
+    let env = TestEnv::new();
+    // Create both a valid silo and an orphaned one
+    env.create_silo("valid-silo");
+    let orphan_path = env.create_orphaned_silo("orphan-silo");
+
+    let output = env.run_silo(&["gc", "--force"]);
+
+    TestEnv::assert_success(&output);
+    env.assert_silo_exists("valid-silo");
+    assert!(!orphan_path.exists(), "Orphan should be removed");
+}
