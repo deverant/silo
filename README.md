@@ -69,12 +69,16 @@ If a name is ambiguous, silo shows matching options.
 
 ## Claude Code Integration
 
-Install the silo skill to let Claude use isolated worktrees:
+Run Claude Code directly inside a silo for proper permission scoping:
 
 ```bash
-# Project-level (current repo only)
-silo skill init
+# Create a silo and run Claude in it
+silo new feature-branch
+silo cd feature-branch
+claude
 
-# Global (all projects)
-silo skill init --global
+# Or use exec to run Claude without changing your shell's directory
+silo exec feature-branch claude
 ```
+
+This ensures Claude's permissions are scoped to the worktree directory.

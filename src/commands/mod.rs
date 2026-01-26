@@ -14,7 +14,6 @@ pub mod reset;
 pub mod rm;
 pub mod sandbox;
 pub mod shell;
-pub mod skill;
 
 use crate::process;
 use crate::shell as shell_integration;

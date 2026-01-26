@@ -141,11 +141,6 @@ enum Commands {
         #[command(subcommand)]
         command: SandboxCommands,
     },
-    /// Claude Code skill management
-    Skill {
-        #[command(subcommand)]
-        command: SkillCommands,
-    },
 }
 
 #[derive(Subcommand)]
@@ -177,16 +172,6 @@ enum SandboxCommands {
         /// Arguments to pass to Claude Code (after --)
         #[arg(last = true)]
         args: Vec<String>,
-    },
-}
-
-#[derive(Subcommand)]
-enum SkillCommands {
-    /// Install/update the Claude Code skill
-    Init {
-        /// Install globally (~/.claude/skills/) instead of project-level
-        #[arg(short, long)]
-        global: bool,
     },
 }
 
@@ -244,9 +229,6 @@ fn main() {
             SandboxCommands::Claude { silo, args } => {
                 commands::sandbox::claude(silo, cli.dry_run, &args)
             }
-        },
-        Commands::Skill { command } => match command {
-            SkillCommands::Init { global } => commands::skill::init(global, cli.dry_run, cli.quiet),
         },
     };
 
