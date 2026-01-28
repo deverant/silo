@@ -204,6 +204,7 @@ fn main() {
     };
 
     let use_color = color::should_use_color(false);
+    let config = config::Config::load().unwrap_or_default();
 
     let result = match command {
         Commands::New { branch, command } => {
@@ -211,7 +212,7 @@ fn main() {
         }
         Commands::List { all } => commands::list::run(all, use_color, cli.quiet),
         Commands::Rm { name } => commands::rm::run(name, cli.dry_run, cli.force, cli.quiet),
-        Commands::Cd { name } => commands::cd::run(name),
+        Commands::Cd { name } => commands::cd::run(name, &config),
         Commands::Exec { name, command } => commands::exec::run(name, &command, cli.quiet),
         Commands::Prune { all } => commands::prune::run(all, cli.dry_run, cli.force, cli.quiet),
         Commands::Gc => commands::gc::run(cli.dry_run, cli.force, cli.quiet),

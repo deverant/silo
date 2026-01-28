@@ -3,6 +3,8 @@ use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
 
+use crate::config::Config;
+
 pub mod zsh;
 
 /// Supported shell types for integration
@@ -31,6 +33,36 @@ fn write_directive_to_path(path: Option<PathBuf>, key: &str, value: &str) {
 
     // Silently ignore write errors - directive file is optional
     let _ = writeln!(file, "{}={}", key, value);
+}
+
+/// Check if shell integration is enabled.
+pub fn is_enabled() -> bool {
+    std::env::var_os(DIRECTIVE_FILE_ENV).is_some()
+}
+
+/// Warn the user if shell integration is not enabled.
+/// Respects the `warn_shell_integration` config option.
+/// Prints to stderr so it doesn't interfere with command output.
+pub fn warn_if_not_enabled(config: &Config) {
+    if is_enabled() || !config.warn_shell_integration() {
+        return;
+    }
+
+    eprintln!(
+        "\
+hint: Shell integration is not enabled. The `cd` command printed the
+      path but could not change your shell's working directory.
+
+      To enable shell integration, add to your shell config:
+
+        # For zsh (~/.zshrc):
+        eval \"$(silo shell init zsh)\"
+
+      To disable this warning, add to ~/.config/silo.toml:
+
+        warn_shell_integration = false
+"
+    );
 }
 
 /// Write a directive to the directive file (if configured).

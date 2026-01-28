@@ -8,6 +8,8 @@ const DEFAULT_WORKTREE_DIR: &str = ".local/var/silo";
 #[derive(Debug, Default, Deserialize, Clone)]
 pub struct Config {
     pub worktree_dir: Option<String>,
+    /// Whether to warn when shell integration is not enabled (default: true)
+    pub warn_shell_integration: Option<bool>,
 }
 
 impl Config {
@@ -64,7 +66,13 @@ impl Config {
     fn merge(self, other: Self) -> Self {
         Config {
             worktree_dir: other.worktree_dir.or(self.worktree_dir),
+            warn_shell_integration: other.warn_shell_integration.or(self.warn_shell_integration),
         }
+    }
+
+    /// Whether to warn when shell integration is not enabled (default: true)
+    pub fn warn_shell_integration(&self) -> bool {
+        self.warn_shell_integration.unwrap_or(true)
     }
 
     /// Get the worktree directory, expanding ~ to $HOME
@@ -97,9 +105,11 @@ mod tests {
     fn test_merge_other_takes_precedence() {
         let base = Config {
             worktree_dir: Some("/base/dir".to_string()),
+            warn_shell_integration: None,
         };
         let other = Config {
             worktree_dir: Some("/other/dir".to_string()),
+            warn_shell_integration: None,
         };
         let merged = base.merge(other);
         assert_eq!(merged.worktree_dir, Some("/other/dir".to_string()));
@@ -109,16 +119,26 @@ mod tests {
     fn test_merge_preserves_base_when_other_none() {
         let base = Config {
             worktree_dir: Some("/base/dir".to_string()),
+            warn_shell_integration: None,
         };
-        let other = Config { worktree_dir: None };
+        let other = Config {
+            worktree_dir: None,
+            warn_shell_integration: None,
+        };
         let merged = base.merge(other);
         assert_eq!(merged.worktree_dir, Some("/base/dir".to_string()));
     }
 
     #[test]
     fn test_merge_both_none() {
-        let base = Config { worktree_dir: None };
-        let other = Config { worktree_dir: None };
+        let base = Config {
+            worktree_dir: None,
+            warn_shell_integration: None,
+        };
+        let other = Config {
+            worktree_dir: None,
+            warn_shell_integration: None,
+        };
         let merged = base.merge(other);
         assert_eq!(merged.worktree_dir, None);
     }
@@ -127,6 +147,7 @@ mod tests {
     fn test_get_worktree_dir_absolute_path() {
         let config = Config {
             worktree_dir: Some("/absolute/path/to/silos".to_string()),
+            warn_shell_integration: None,
         };
         let result = config.get_worktree_dir();
         assert!(result.is_ok());
@@ -137,6 +158,7 @@ mod tests {
     fn test_get_worktree_dir_tilde_expansion() {
         let config = Config {
             worktree_dir: Some("~/my/silos".to_string()),
+            warn_shell_integration: None,
         };
         let result = config.get_worktree_dir();
         assert!(result.is_ok());
@@ -150,6 +172,7 @@ mod tests {
     fn test_get_worktree_dir_relative_path() {
         let config = Config {
             worktree_dir: Some("relative/path".to_string()),
+            warn_shell_integration: None,
         };
         let result = config.get_worktree_dir();
         assert!(result.is_ok());
@@ -160,7 +183,10 @@ mod tests {
 
     #[test]
     fn test_get_worktree_dir_default() {
-        let config = Config { worktree_dir: None };
+        let config = Config {
+            worktree_dir: None,
+            warn_shell_integration: None,
+        };
         let result = config.get_worktree_dir();
         assert!(result.is_ok());
         let path = result.unwrap();
@@ -178,17 +204,55 @@ mod tests {
     fn test_config_clone() {
         let config = Config {
             worktree_dir: Some("/test".to_string()),
+            warn_shell_integration: Some(false),
         };
         let cloned = config.clone();
         assert_eq!(config.worktree_dir, cloned.worktree_dir);
+        assert_eq!(config.warn_shell_integration, cloned.warn_shell_integration);
     }
 
     #[test]
     fn test_config_debug() {
         let config = Config {
             worktree_dir: Some("/test".to_string()),
+            warn_shell_integration: None,
         };
         let debug = format!("{:?}", config);
         assert!(debug.contains("/test"));
+    }
+
+    #[test]
+    fn test_warn_shell_integration_defaults_to_true() {
+        let config = Config::default();
+        assert!(config.warn_shell_integration());
+    }
+
+    #[test]
+    fn test_warn_shell_integration_respects_explicit_value() {
+        let config = Config {
+            worktree_dir: None,
+            warn_shell_integration: Some(false),
+        };
+        assert!(!config.warn_shell_integration());
+
+        let config = Config {
+            worktree_dir: None,
+            warn_shell_integration: Some(true),
+        };
+        assert!(config.warn_shell_integration());
+    }
+
+    #[test]
+    fn test_merge_warn_shell_integration() {
+        let base = Config {
+            worktree_dir: None,
+            warn_shell_integration: Some(true),
+        };
+        let other = Config {
+            worktree_dir: None,
+            warn_shell_integration: Some(false),
+        };
+        let merged = base.merge(other);
+        assert_eq!(merged.warn_shell_integration, Some(false));
     }
 }

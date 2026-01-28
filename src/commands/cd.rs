@@ -1,14 +1,15 @@
 //! The `cd` command: navigate to a silo directory.
 
+use crate::config::Config;
 use crate::git;
 use crate::shell;
 
 use super::{resolve_dash, resolve_silo};
 
-pub fn run(name: Option<String>) -> Result<(), String> {
+pub fn run(name: Option<String>, config: &Config) -> Result<(), String> {
     // If no name provided, navigate to the main worktree
     let Some(name) = name else {
-        return cd_to_main_worktree();
+        return cd_to_main_worktree(config);
     };
 
     let name = resolve_dash(&name)?;
@@ -22,6 +23,7 @@ pub fn run(name: Option<String>) -> Result<(), String> {
         // Navigate to the main worktree (don't track as "last" silo)
         shell::write_directive("cd", &main_wt.path.display().to_string());
         println!("{}", main_wt.path.display());
+        shell::warn_if_not_enabled(config);
         return Ok(());
     }
 
@@ -34,10 +36,11 @@ pub fn run(name: Option<String>) -> Result<(), String> {
 
     // Also print path for non-shell-wrapper usage (cd $(silo cd branch))
     println!("{}", silo.storage_path.display());
+    shell::warn_if_not_enabled(config);
     Ok(())
 }
 
-fn cd_to_main_worktree() -> Result<(), String> {
+fn cd_to_main_worktree(config: &Config) -> Result<(), String> {
     let repo_root =
         git::try_get_repo_root().ok_or_else(|| "Not in a git repository".to_string())?;
 
@@ -48,5 +51,6 @@ fn cd_to_main_worktree() -> Result<(), String> {
 
     shell::write_directive("cd", &main_wt.path.display().to_string());
     println!("{}", main_wt.path.display());
+    shell::warn_if_not_enabled(config);
     Ok(())
 }
