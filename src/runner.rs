@@ -14,7 +14,7 @@ use crate::process;
 /// then executes the command. The process is tracked while running.
 /// Exits the process if the command fails.
 pub fn run_command(command: &[String], dir: &Path, config: &Config) -> Result<(), String> {
-    let command = apply_extra_args(command, config.command_extra_args());
+    let command = apply_extra_args(command, config.extra_command_args());
     run_command_in_dir(&command, dir)
 }
 
@@ -71,6 +71,9 @@ fn run_command_in_dir(command: &[String], dir: &Path) -> Result<(), String> {
 /// result = ["git", "-c", "a=1", "diff", "--stat", "file.txt"]
 /// ```
 fn apply_extra_args(command: &[String], extra_args: &HashMap<String, Vec<String>>) -> Vec<String> {
+    use tracing::trace;
+    trace!(?extra_args, "Extra args from config");
+
     if command.is_empty() || extra_args.is_empty() {
         return command.to_vec();
     }
@@ -98,8 +101,11 @@ fn apply_extra_args(command: &[String], extra_args: &HashMap<String, Vec<String>
         .collect();
 
     if matches.is_empty() {
+        trace!("No prefix matches found");
         return command.to_vec();
     }
+
+    trace!(match_count = matches.len(), "Found prefix matches");
 
     // Sort by prefix length (shortest first)
     matches.sort_by_key(|(len, _)| *len);
