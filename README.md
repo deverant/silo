@@ -24,6 +24,22 @@ Or install directly from the repository:
 cargo install --git https://github.com/deverant/silo
 ```
 
+## Shell Integration
+
+To enable shell integration (required for `silo cd` to change your directory), add to your shell config:
+
+**Zsh (~/.zshrc):**
+```bash
+eval "$(silo shell init zsh)"
+```
+
+This provides:
+- `silo cd` changes your shell's working directory
+- `silo cd -` returns to the previous silo
+- Tab completion for silo commands and branch names
+
+Without shell integration, `silo cd` will print the path but cannot change your directory.
+
 ## Usage
 
 ```bash
