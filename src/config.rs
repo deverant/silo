@@ -1,10 +1,18 @@
 use serde::Deserialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use tracing::warn;
 
 const USER_CONFIG_PATH: &str = ".config/silo.toml";
 const LOCAL_CONFIG_NAME: &str = ".silo.toml";
 const DEFAULT_WORKTREE_DIR: &str = ".local/var/silo";
+
+/// Known top-level config keys
+const KNOWN_KEYS: &[&str] = &[
+    "worktree_dir",
+    "warn_shell_integration",
+    "extra_command_args",
+];
 
 #[derive(Debug, Default, Deserialize, Clone)]
 pub struct Config {
@@ -42,6 +50,15 @@ impl Config {
         Ok(config)
     }
 
+    /// Load config exclusively from a specific file (ignores default locations).
+    /// Unlike load_from_path, this returns an error if the file doesn't exist.
+    pub fn load_file(path: &Path) -> Result<Self, String> {
+        if !path.exists() {
+            return Err(format!("Config file not found: {}", path.display()));
+        }
+        Self::load_from_path(path)
+    }
+
     /// Load user config from ~/.config/silo.toml
     fn load_user() -> Result<Self, String> {
         let home = std::env::var("HOME").map_err(|_| "HOME environment variable not set")?;
@@ -62,9 +79,24 @@ impl Config {
         }
 
         let contents = std::fs::read_to_string(config_path)
-            .map_err(|e| format!("Failed to read config file: {}", e))?;
+            .map_err(|e| format!("Failed to read {}: {}", config_path.display(), e))?;
 
-        toml::from_str(&contents).map_err(|e| format!("Failed to parse config file: {}", e))
+        // First parse as generic TOML to check for unknown keys
+        if let Ok(value) = contents.parse::<toml::Table>() {
+            let known: HashSet<&str> = KNOWN_KEYS.iter().copied().collect();
+            for key in value.keys() {
+                if !known.contains(key.as_str()) {
+                    warn!(
+                        file = %config_path.display(),
+                        key = %key,
+                        "Unknown config key (ignored)"
+                    );
+                }
+            }
+        }
+
+        toml::from_str(&contents)
+            .map_err(|e| format!("Failed to parse {}: {}", config_path.display(), e))
     }
 
     /// Merge another config into this one (other takes precedence for set values).

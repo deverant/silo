@@ -48,6 +48,10 @@ struct Cli {
     /// Enable verbose output (debug-level logging)
     #[arg(short = 'v', long, global = true)]
     verbose: bool,
+
+    /// Use a specific config file (ignores default config locations)
+    #[arg(short = 'c', long, global = true, value_name = "FILE")]
+    config_file: Option<std::path::PathBuf>,
 }
 
 #[derive(Subcommand)]
@@ -205,7 +209,17 @@ fn main() {
     };
 
     let use_color = color::should_use_color(false);
-    let config = config::Config::load().unwrap_or_default();
+    let config = match &cli.config_file {
+        Some(path) => config::Config::load_file(path),
+        None => config::Config::load(),
+    };
+    let config = match config {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(exit::ERROR);
+        }
+    };
 
     let result = match command {
         Commands::New { branch, command } => {
