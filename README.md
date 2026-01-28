@@ -1,6 +1,6 @@
 # silo
 
-Manage isolated git worktrees for parallel development.
+Manage isolated git worktrees for parallel development. I know there are others out there, but this one works for my workflow best.
 
 ## Overview
 
