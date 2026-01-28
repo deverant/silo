@@ -127,8 +127,8 @@ fn silo_names() -> Vec<Completion> {
                 .filter_map(|(i, wt)| {
                     let is_main = i == 0;
                     let is_silo = silo::is_silo_path(&wt.path);
-                    if (is_main || is_silo) && wt.branch.is_some() {
-                        Some(Completion::new(wt.branch.as_ref().unwrap()))
+                    if is_main || is_silo {
+                        wt.branch.as_ref().map(Completion::new)
                     } else {
                         None
                     }
