@@ -21,6 +21,7 @@ mod names;
 mod process;
 mod prompt;
 mod removal;
+mod runner;
 mod sandbox;
 mod shell;
 mod silo;
