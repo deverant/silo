@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 const USER_CONFIG_PATH: &str = ".config/silo.toml";
@@ -10,6 +11,10 @@ pub struct Config {
     pub worktree_dir: Option<String>,
     /// Whether to warn when shell integration is not enabled (default: true)
     pub warn_shell_integration: Option<bool>,
+    /// Extra arguments to inject into commands based on command prefix.
+    /// Keys are command prefixes (e.g., "git", "git diff"), values are args to insert.
+    #[serde(default)]
+    pub command_extra_args: HashMap<String, Vec<String>>,
 }
 
 impl Config {
@@ -62,12 +67,24 @@ impl Config {
         toml::from_str(&contents).map_err(|e| format!("Failed to parse config file: {}", e))
     }
 
-    /// Merge another config into this one (other takes precedence for set values)
+    /// Merge another config into this one (other takes precedence for set values).
+    /// For command_extra_args, entries from both configs are combined (not overridden).
     fn merge(self, other: Self) -> Self {
+        let mut command_extra_args = self.command_extra_args;
+        for (key, args) in other.command_extra_args {
+            command_extra_args.entry(key).or_default().extend(args);
+        }
+
         Config {
             worktree_dir: other.worktree_dir.or(self.worktree_dir),
             warn_shell_integration: other.warn_shell_integration.or(self.warn_shell_integration),
+            command_extra_args,
         }
+    }
+
+    /// Get the extra args configuration for commands.
+    pub fn command_extra_args(&self) -> &HashMap<String, Vec<String>> {
+        &self.command_extra_args
     }
 
     /// Whether to warn when shell integration is not enabled (default: true)
@@ -106,10 +123,12 @@ mod tests {
         let base = Config {
             worktree_dir: Some("/base/dir".to_string()),
             warn_shell_integration: None,
+            command_extra_args: HashMap::new(),
         };
         let other = Config {
             worktree_dir: Some("/other/dir".to_string()),
             warn_shell_integration: None,
+            command_extra_args: HashMap::new(),
         };
         let merged = base.merge(other);
         assert_eq!(merged.worktree_dir, Some("/other/dir".to_string()));
@@ -120,10 +139,12 @@ mod tests {
         let base = Config {
             worktree_dir: Some("/base/dir".to_string()),
             warn_shell_integration: None,
+            command_extra_args: HashMap::new(),
         };
         let other = Config {
             worktree_dir: None,
             warn_shell_integration: None,
+            command_extra_args: HashMap::new(),
         };
         let merged = base.merge(other);
         assert_eq!(merged.worktree_dir, Some("/base/dir".to_string()));
@@ -134,10 +155,12 @@ mod tests {
         let base = Config {
             worktree_dir: None,
             warn_shell_integration: None,
+            command_extra_args: HashMap::new(),
         };
         let other = Config {
             worktree_dir: None,
             warn_shell_integration: None,
+            command_extra_args: HashMap::new(),
         };
         let merged = base.merge(other);
         assert_eq!(merged.worktree_dir, None);
@@ -148,6 +171,7 @@ mod tests {
         let config = Config {
             worktree_dir: Some("/absolute/path/to/silos".to_string()),
             warn_shell_integration: None,
+            command_extra_args: HashMap::new(),
         };
         let result = config.get_worktree_dir();
         assert!(result.is_ok());
@@ -159,6 +183,7 @@ mod tests {
         let config = Config {
             worktree_dir: Some("~/my/silos".to_string()),
             warn_shell_integration: None,
+            command_extra_args: HashMap::new(),
         };
         let result = config.get_worktree_dir();
         assert!(result.is_ok());
@@ -173,6 +198,7 @@ mod tests {
         let config = Config {
             worktree_dir: Some("relative/path".to_string()),
             warn_shell_integration: None,
+            command_extra_args: HashMap::new(),
         };
         let result = config.get_worktree_dir();
         assert!(result.is_ok());
@@ -186,6 +212,7 @@ mod tests {
         let config = Config {
             worktree_dir: None,
             warn_shell_integration: None,
+            command_extra_args: HashMap::new(),
         };
         let result = config.get_worktree_dir();
         assert!(result.is_ok());
@@ -198,17 +225,22 @@ mod tests {
     fn test_config_default() {
         let config = Config::default();
         assert!(config.worktree_dir.is_none());
+        assert!(config.command_extra_args.is_empty());
     }
 
     #[test]
     fn test_config_clone() {
+        let mut extra_args = HashMap::new();
+        extra_args.insert("git".to_string(), vec!["--color".to_string()]);
         let config = Config {
             worktree_dir: Some("/test".to_string()),
             warn_shell_integration: Some(false),
+            command_extra_args: extra_args,
         };
         let cloned = config.clone();
         assert_eq!(config.worktree_dir, cloned.worktree_dir);
         assert_eq!(config.warn_shell_integration, cloned.warn_shell_integration);
+        assert_eq!(config.command_extra_args, cloned.command_extra_args);
     }
 
     #[test]
@@ -216,6 +248,7 @@ mod tests {
         let config = Config {
             worktree_dir: Some("/test".to_string()),
             warn_shell_integration: None,
+            command_extra_args: HashMap::new(),
         };
         let debug = format!("{:?}", config);
         assert!(debug.contains("/test"));
@@ -232,12 +265,14 @@ mod tests {
         let config = Config {
             worktree_dir: None,
             warn_shell_integration: Some(false),
+            command_extra_args: HashMap::new(),
         };
         assert!(!config.warn_shell_integration());
 
         let config = Config {
             worktree_dir: None,
             warn_shell_integration: Some(true),
+            command_extra_args: HashMap::new(),
         };
         assert!(config.warn_shell_integration());
     }
@@ -247,12 +282,77 @@ mod tests {
         let base = Config {
             worktree_dir: None,
             warn_shell_integration: Some(true),
+            command_extra_args: HashMap::new(),
         };
         let other = Config {
             worktree_dir: None,
             warn_shell_integration: Some(false),
+            command_extra_args: HashMap::new(),
         };
         let merged = base.merge(other);
         assert_eq!(merged.warn_shell_integration, Some(false));
+    }
+
+    #[test]
+    fn test_parse_command_extra_args() {
+        let toml_str = r#"
+[command_extra_args]
+git = ["-c", "color.ui=always"]
+"git diff" = ["--stat"]
+"#;
+        let config: Config = toml::from_str(toml_str).unwrap();
+        assert_eq!(
+            config.command_extra_args.get("git"),
+            Some(&vec!["-c".to_string(), "color.ui=always".to_string()])
+        );
+        assert_eq!(
+            config.command_extra_args.get("git diff"),
+            Some(&vec!["--stat".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_merge_command_extra_args_combines() {
+        let mut base_args = HashMap::new();
+        base_args.insert("git".to_string(), vec!["-c".to_string(), "a=1".to_string()]);
+        base_args.insert("cargo".to_string(), vec!["--color=always".to_string()]);
+
+        let mut other_args = HashMap::new();
+        other_args.insert("git".to_string(), vec!["-c".to_string(), "b=2".to_string()]);
+        other_args.insert("npm".to_string(), vec!["--silent".to_string()]);
+
+        let base = Config {
+            worktree_dir: None,
+            warn_shell_integration: None,
+            command_extra_args: base_args,
+        };
+        let other = Config {
+            worktree_dir: None,
+            warn_shell_integration: None,
+            command_extra_args: other_args,
+        };
+
+        let merged = base.merge(other);
+
+        // git args should be combined
+        assert_eq!(
+            merged.command_extra_args.get("git"),
+            Some(&vec![
+                "-c".to_string(),
+                "a=1".to_string(),
+                "-c".to_string(),
+                "b=2".to_string()
+            ])
+        );
+        // cargo should be preserved from base
+        assert_eq!(
+            merged.command_extra_args.get("cargo"),
+            Some(&vec!["--color=always".to_string()])
+        );
+        // npm should be added from other
+        assert_eq!(
+            merged.command_extra_args.get("npm"),
+            Some(&vec!["--silent".to_string()])
+        );
     }
 }

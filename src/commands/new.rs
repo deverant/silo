@@ -1,15 +1,24 @@
 //! The `new` command: create a new silo with a new branch.
 
+use crate::config::Config;
 use crate::git::{self, Verbosity};
 use crate::shell;
 use crate::silo;
 
-use super::run_command_in_dir;
+use super::{apply_extra_args, run_command_in_dir};
 
-pub fn run(branch: String, command: &[String], dry_run: bool, quiet: bool) -> Result<(), String> {
+pub fn run(
+    branch: String,
+    command: &[String],
+    config: &Config,
+    dry_run: bool,
+    quiet: bool,
+) -> Result<(), String> {
     let repo_info = git::get_repo_info()?;
     let repo_root = &repo_info.main_worktree;
     let silo_path = silo::get_silo_path(&repo_info.name, repo_root, &branch)?;
+
+    let command = apply_extra_args(command, config.command_extra_args());
 
     if dry_run {
         println!("Would create silo at: {}", silo_path.display());
@@ -45,7 +54,7 @@ pub fn run(branch: String, command: &[String], dry_run: bool, quiet: bool) -> Re
 
     // Execute command in the new silo if provided
     if !command.is_empty() {
-        run_command_in_dir(command, &silo_path)?;
+        run_command_in_dir(&command, &silo_path)?;
         if !quiet {
             eprintln!("[silo: {}]", branch);
         }

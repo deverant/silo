@@ -208,12 +208,12 @@ fn main() {
 
     let result = match command {
         Commands::New { branch, command } => {
-            commands::new::run(branch, &command, cli.dry_run, cli.quiet)
+            commands::new::run(branch, &command, &config, cli.dry_run, cli.quiet)
         }
         Commands::List { all } => commands::list::run(all, use_color, cli.quiet),
         Commands::Rm { name } => commands::rm::run(name, cli.dry_run, cli.force, cli.quiet),
         Commands::Cd { name } => commands::cd::run(name, &config),
-        Commands::Exec { name, command } => commands::exec::run(name, &command, cli.quiet),
+        Commands::Exec { name, command } => commands::exec::run(name, &command, &config, cli.quiet),
         Commands::Prune { all } => commands::prune::run(all, cli.dry_run, cli.force, cli.quiet),
         Commands::Gc => commands::gc::run(cli.dry_run, cli.force, cli.quiet),
         Commands::Rebase { name } => commands::rebase::run(name, cli.dry_run, cli.quiet),
